@@ -1,0 +1,19 @@
+# Secrets
+.env
+.env.txt
+
+# Large data and model files
+keiba_data.csv
+keiba_data_features.csv
+*.pkl
+
+# CatBoost training artifacts
+catboost_info/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Claude session data
+.claude/
