@@ -55,7 +55,8 @@ streamlit run pipeline/dashboard_15.py        # ダッシュボード http://loc
 | backtest_engine_32.py | EVグリッドサーチ バックテスト | data/backtest_summary_{year}.json |
 | backtest_walkforward_35.py | 時系列OOS検証（パージ幅2週） | data/walkforward_result.json |
 | condition_adjuster_34.py | 競馬場×距離×季節 ベット係数 | data/condition_coefficients.json |
-| odds_monitor_33.py | SHARP/STEAM/DRIFT 変動検知 | data/odds_monitor_config.json |
+| odds_monitor_33.py | SHARP/STEAM/DRIFT 変動検知（過去データ分析） | data/odds_monitor_config.json |
+| odds_scraper_36.py | **Playwright リアルタイムオッズ取得**（セッション不要） | data/odds_snapshot_YYYYMMDD.json |
 | roi_tracker_12.py | 日次/週次/月次 回収率追跡 | — |
 
 ### PHASE 5 — 発信
@@ -98,7 +99,7 @@ postgresql://postgres:trust@localhost:5433/mykeibadb
 - `keiba_data_features.csv` 339766行目が破損 → 全 `read_csv` に `on_bad_lines='skip'` 適用済み
 - CatBoost の `shap.TreeExplainer` はセグフォルト → `get_feature_importance()` で代替（04_cb_summary.png）
 - `condition_adjuster_34.py` は `win_probability` 列が必要 → model_train_03 実行後に有効化
-- `NETKEIBA_SESSION_ID` 未設定時はオッズリアルタイム監視が無効（過去データ分析のみ）
+- `NETKEIBA_SESSION_ID` 不要 → `odds_scraper_36.py` が Playwright で直接取得（セッション不要）
 - `requirements.txt` なし（手動インストール要）
 
 ## ウォークフォワード検証結果（最新）

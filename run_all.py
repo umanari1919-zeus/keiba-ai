@@ -173,6 +173,10 @@ def run_all(
     from pipeline.odds_monitor_33 import run_odds_monitor
     _safe("odds_monitor", run_odds_monitor, year)
 
+    print("\n【STEP 15h】Playwright リアルタイムオッズ取得 (odds_scraper_36)")
+    from pipeline.odds_scraper_36 import run_odds_scraper
+    _safe("odds_scraper", run_odds_scraper)
+
     if not skip_stats and result:
         from pipeline.statistical_tools_23 import run_monte_carlo
         hr  = result.get('hit_rate', 38.8) / 100
