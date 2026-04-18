@@ -33,7 +33,8 @@ from datetime import datetime
 MODEL_PATH   = "D:/keiba_ai/model_v8.pkl"
 DATA_PATH    = "D:/keiba_ai/keiba_data_features.csv"
 OUT_DIR      = "D:/keiba_ai/shap_output"
-SAMPLE_N     = 3000   # SHAP計算用サンプル数
+SAMPLE_N     = 3000   # SHAP計算用サンプル数（LGB/XGB）
+CB_SAMPLE_N  = 500    # CatBoost SHAP はメモリ大→小サンプル
 WATERFALL_N  = 5      # 穴馬個別説明の頭数
 TARGET_YEAR  = 2025   # 評価・穴馬抽出対象年
 MIN_ODDS     = 30.0   # 穴馬定義（単勝30倍以上）
@@ -323,16 +324,14 @@ def main():
     plot_summary(xgb_win, X_sample,
                  "XGBoost: 勝率への特徴量の影響度", "03_xgb_summary.png")
 
-    # ── CatBoost SHAP ────────────────────────────────────────────────────────
-    print(f"[{datetime.now():%H:%M:%S}] CatBoost SHAP 計算中 ...")
-    cb_exp  = shap.TreeExplainer(cb_model)
-    cb_shap = cb_exp(X_sample)
-    cb_win  = cb_shap.values[:, :, WIN_COL]
-    imp_cb_win = shap_importance(cb_win, features)
+    # ── CatBoost: SHAP は省略（TreeExplainerがセグフォルト）→ 組み込み重要度で代替
+    print(f"[{datetime.now():%H:%M:%S}] CatBoost 特徴量重要度取得中 ...")
+    cb_imp_raw = cb_model.get_feature_importance()
+    imp_cb_win = pd.Series(cb_imp_raw / max(cb_imp_raw.max(), 1e-9), index=features)
 
-    # 04: CatBoost beeswarm
-    plot_summary(cb_win, X_sample,
-                 "CatBoost: 勝率への特徴量の影響度", "04_cb_summary.png")
+    # 04: CatBoost 棒グラフ（beeswarm 代替）
+    plot_bar(imp_cb_win, "CatBoost: 特徴量重要度（組み込みスコア）",
+             "04_cb_summary.png", color="#C678DD")
 
     # 05: アンサンブル平均 棒グラフ
     ens_imp = 0.5 * imp_win + 0.3 * imp_xgb_win + 0.2 * imp_cb_win
