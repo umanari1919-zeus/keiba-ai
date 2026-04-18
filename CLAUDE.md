@@ -1,85 +1,39 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+**うまなり地蔵AI** — 高オッズ穴馬（30倍以上）をアンサンブルMLで予測し、X・note.comへ自動投稿する競馬予想システム。
 
-## Project Overview
-
-**うまなり地蔵AI** — An automated horse racing (競馬) prediction system that identifies high-odds long-shot horses (30x+ odds) using an ensemble ML model, then posts predictions to X (Twitter) and note.com.
-
-## Running the Pipeline
+## 実行
 
 ```bash
-# Full pipeline (all 6 stages)
-python run_all.py
-
-# Continuous scheduler (runs pipeline Sat/Sun at 08:00, posts to X at 09:00)
-python scheduler.py
-
-# Individual stages
-python pipeline/data_fetch_01.py       # Fetch raw data from PostgreSQL → keiba_data.csv
-python pipeline/feature_eng_02.py     # Engineer 60+ features → keiba_data_features.csv
-python pipeline/model_train_03.py     # Train ensemble → model_v8.pkl
-python pipeline/predict_04.py         # Generate predictions → simulation_2025.csv
-python pipeline/validation.py         # Walk-forward validation (2023–2025)
-python pipeline/analysis.py           # Performance breakdown by segment
-
-# Test database connection
-python test_connection.py
+python run_all.py        # 全9ステップ自動実行
+python scheduler.py      # 土日08:00自動スケジューラ
+streamlit run pipeline/dashboard_15.py  # ダッシュボード
 ```
 
-No automated test suite (pytest/unittest) exists.
+## パイプライン構成（pipeline/）
 
-## Architecture
+| ファイル | 役割 |
+|----------|------|
+| data_fetch_01.py | PostgreSQL → keiba_data.csv |
+| feature_eng_02.py | 60+特徴量 → keiba_data_features.csv |
+| model_train_03.py | アンサンブル学習 → model_v8.pkl |
+| predict_04.py | 予想生成 → simulation_2025.csv |
+| claude_comment_06.py | Haiku API + prompt caching でコメント生成 |
+| kelly_bankroll_09.py | ケリー基準資金管理 |
+| ev_engine_10.py | 期待値計算・レース選別 |
+| portfolio_opt_11.py | 馬券ポートフォリオ最適化 |
+| roi_tracker_12.py | 日次/週次/月次 回収率追跡 |
+| auto_learn_13.py | 精度低下時の自動再学習 |
+| multi_agent_14.py | LangGraph 5エージェント協調 |
+| dashboard_15.py | Streamlit UI（http://localhost:8501） |
+| anomaly_detect_16.py | 異常検知（精度劣化・八百長兆候） |
 
-### 6-Stage Pipeline
+## モデル (model_v8.pkl)
 
-```
-PostgreSQL (localhost:5433/mykeibadb)
-  └─ data_fetch_01.py      → keiba_data.csv (137 MB, ~450k races, 1954–present)
-  └─ feature_eng_02.py     → keiba_data_features.csv (228 MB)
-  └─ model_train_03.py     → model_v8.pkl (85 MB ensemble)
-  └─ predict_04.py         → simulation_2025.csv (current-year predictions)
-  └─ post_x_05.py          → X (Twitter) post
-  └─ claude_comment_06.py  → AI commentary in "うまなり地蔵" persona
-  └─ note_07.py            → note.com monthly report markdown
-  └─ notify_08.py          → Gmail summary email
-```
+LightGBM 50% + XGBoost 30% + CatBoost 20%。オッズ・人気は**特徴量から除外**（データリーク防止）、予測後フィルタとしてのみ使用。DB: `postgresql://postgres:trust@localhost:5433/mykeibadb`
 
-### Ensemble Model (model_v8.pkl)
+## 注意
 
-- LightGBM 50% + XGBoost 30% + CatBoost 20% weighted vote
-- **Deliberately excludes odds/popularity from features** to avoid data leakage; odds are used only as a post-prediction filter (≥30x)
-- Rolling averages use `shift(1)` to prevent look-ahead bias
-- ~60+ features: pedigree codes, jockey/trainer win rates, track/distance/ground conditions, weight changes, training times, cross-features
-
-### Database Tables
-
-| Table | Contents |
-|-------|----------|
-| `umagoto_race_joho` | Race entries and results |
-| `race_shosai` | Race details (distance, track, weather, ground) |
-| `kyosoba_master2` | Horse genealogy, per-horse performance by track/distance/ground |
-| `hanro_chokyo` | Training times |
-| `odds1_fukusho` … `odds5_sanrenpuku` | Ticket-type odds |
-
-## Environment Variables (`.env`)
-
-```
-# X (Twitter) API — optional, falls back to printing post text
-X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET
-
-# Gmail notifications
-GMAIL_ADDRESS, GMAIL_APP_PASSWORD, NOTIFY_TO
-```
-
-## Key Dependencies
-
-pandas, numpy, sqlalchemy, psycopg2, lightgbm, xgboost, catboost, scikit-learn, tweepy, schedule, python-dotenv
-
-No `requirements.txt` exists; dependencies must be installed manually.
-
-## Deprecated / Archived Files
-
-- `model_v2.py`, `model_v2.pkl`–`model_v7.pkl` — superseded by `model_v8.pkl`
-- `feature_engineering.py` — superseded by `pipeline/feature_eng_02.py`
-- `test_connection.py` — diagnostic only, uses RandomForest (not production)
+- DB詳細・環境変数一覧は memory/ を参照
+- `requirements.txt` なし（手動インストール要）
+- 廃止: model_v2〜v7.pkl, feature_engineering.py
