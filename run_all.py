@@ -5,6 +5,9 @@
 import sys
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+JST = ZoneInfo("Asia/Tokyo")
 
 sys.path.append("D:\\keiba_ai")
 
@@ -31,10 +34,10 @@ def run_all(
 ):
     print("=" * 60)
     print(f"🙏 うまなり地蔵AI 世界最強版 全自動実行")
-    print(f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"⏰ {datetime.now(tz=JST).strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
-    year = datetime.now().year
+    year = datetime.now(tz=JST).year
 
     # ══════════════════════════════════════════════════════
     # PHASE 1: データ取得・特徴量エンジニアリング
@@ -44,6 +47,35 @@ def run_all(
     print("─"*60)
 
     if not skip_fetch:
+        print("\n【STEP 0/16】JV-Link DB同期 (mykeibadb.exe)")
+        import subprocess, time
+        MYKEIBADB = r"C:\Users\uchih\Downloads\mykeibadb_v3.63\mykeibadb.exe"
+        try:
+            result = subprocess.run(
+                [MYKEIBADB],
+                timeout=300,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if result.returncode == 0:
+                print("  ✅ mykeibadb 同期完了")
+            else:
+                print(f"  ⚠️ mykeibadb 終了コード {result.returncode}")
+                if result.stdout: print(result.stdout[-500:])
+                if result.stderr: print(result.stderr[-200:])
+        except subprocess.TimeoutExpired:
+            print("  ⚠️ mykeibadb タイムアウト（300秒）")
+        except FileNotFoundError:
+            print(f"  ⚠️ mykeibadb.exe が見つかりません: {MYKEIBADB}")
+        except Exception as e:
+            print(f"  ⚠️ mykeibadb エラー: {e}")
+
+        print("\n【STEP 0b/16】当日出馬表取得 (shutsuba_fetch)")
+        from pipeline.shutsuba_fetch import save_today_entries
+        _safe("shutsuba_fetch", save_today_entries)
+
         print("\n【STEP 1/16】データ取得 (data_fetch_01)")
         from pipeline.data_fetch_01 import fetch_data
         _safe("data_fetch", fetch_data)
@@ -80,6 +112,10 @@ def run_all(
         print("\n【STEP 6d】新馬戦強化分析 (debut_analysis_39)")
         from pipeline.debut_analysis_39 import run_debut_analysis
         _safe("debut_analysis", run_debut_analysis)
+
+        print("\n【STEP 6e】障害戦強化分析 (shogai_analysis_40)")
+        from pipeline.shogai_analysis_40 import run_shogai_analysis
+        _safe("shogai_analysis", run_shogai_analysis)
 
     # ══════════════════════════════════════════════════════
     # PHASE 2: 異常検知・自動学習
@@ -148,8 +184,16 @@ def run_all(
     print("─"*60)
 
     print("\n【STEP 14/16】予想生成 (predict_04)")
-    from pipeline.predict_04 import simulate_recovery
-    result = _safe("predict", simulate_recovery, year)
+    from pipeline.predict_04 import predict_today, simulate_recovery
+    today_str = datetime.now(tz=JST).strftime("%Y%m%d")
+    import os as _os
+    today_file = _os.path.join("D:\\keiba_ai\\data", f"today_entries_{today_str}.csv")
+    if _os.path.exists(today_file):
+        print("  → 当日出馬表あり: リアル予測モードで実行")
+        result = _safe("predict_today", predict_today, today_str)
+    else:
+        print("  → 当日出馬表なし: バックテストモードで実行")
+        result = _safe("predict", simulate_recovery, year)
 
     print("\n【STEP 15/16】期待値・ポートフォリオ (ev_engine_10 / portfolio_opt_11)")
     from pipeline.ev_engine_10 import run_ev_analysis
@@ -209,6 +253,10 @@ def run_all(
     print("📢 PHASE 5: 発信・レポート")
     print("─"*60)
 
+    print("\n【STEP 15i】知識ベース自動進化 (knowledge_curator_41)")
+    from pipeline.knowledge_curator_41 import run_knowledge_curator
+    _safe("knowledge", run_knowledge_curator, 7)
+
     print("\n【STEP 16/16】発信・レポート")
     from pipeline.claude_comment_06 import generate_todays_post
     from pipeline.note_07 import generate_note_article
@@ -224,23 +272,14 @@ def run_all(
         from pipeline.social_bot_27 import broadcast_picks
         _safe("social", broadcast_picks, post_text)
 
-    if result:
-        notify_result = {
-            'hit_rate':      result.get('hit_rate', 0),
-            'recovery_rate': result.get('recovery_rate', 0),
-            'profit':        result.get('profit', 0),
-            'total_races':   result.get('races', 0),
-            'total_profit':  result.get('profit', 0),
-            'honmei':        (post_text or '')[:100]
-        }
-        _safe("notify", send_pipeline_report, notify_result)
+    _safe("notify", send_pipeline_report, {})
 
     # ══════════════════════════════════════════════════════
     # 最終サマリー
     # ══════════════════════════════════════════════════════
     print("\n" + "=" * 60)
     print(f"✅ うまなり地蔵AI 全自動実行完了!")
-    print(f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"⏰ {datetime.now(tz=JST).strftime('%Y-%m-%d %H:%M:%S')}")
     if result:
         emoji = "🎉" if result.get('recovery_rate', 0) >= 100 else "📊"
         print(f"{emoji} {year}年 回収率: {result.get('recovery_rate', 0):.1f}%"
