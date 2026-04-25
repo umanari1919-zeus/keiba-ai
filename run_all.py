@@ -69,6 +69,18 @@ def run_all(
         from pipeline.statistical_tools_23 import run_statistical_analysis
         _safe("stats", run_statistical_analysis)
 
+        print("\n【STEP 6b】調教マルチセッション分析 (training_analysis_37)")
+        from pipeline.training_analysis_37 import run_training_analysis
+        _safe("training_analysis", run_training_analysis)
+
+        print("\n【STEP 6c】調教師特性分析 (trainer_analysis_38)")
+        from pipeline.trainer_analysis_38 import run_trainer_analysis
+        _safe("trainer_analysis", run_trainer_analysis)
+
+        print("\n【STEP 6d】新馬戦強化分析 (debut_analysis_39)")
+        from pipeline.debut_analysis_39 import run_debut_analysis
+        _safe("debut_analysis", run_debut_analysis)
+
     # ══════════════════════════════════════════════════════
     # PHASE 2: 異常検知・自動学習
     # ══════════════════════════════════════════════════════

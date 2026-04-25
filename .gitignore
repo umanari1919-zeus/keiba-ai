@@ -1,19 +1,29 @@
-# Secrets
+# シークレット
 .env
 .env.txt
 
-# Large data and model files
+# 大容量データ・モデルファイル
 keiba_data.csv
 keiba_data_features.csv
+keiba_data_features_backup.csv
 *.pkl
+*.sqlite
 
-# CatBoost training artifacts
+# パイプライン実行時の生成ファイル
+data/
+shap_output/
+pedigree_output/
 catboost_info/
+simulation_*.csv
+today_post.txt
+run_all_err*.txt
+run_all_out*.txt
+D:keiba_aidataauto_run_log.txt
 
-# Python cache
+# Pythonキャッシュ
 __pycache__/
 *.pyc
 *.pyo
 
-# Claude session data
+# Claudeセッションデータ
 .claude/

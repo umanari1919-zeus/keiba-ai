@@ -25,6 +25,10 @@ streamlit run pipeline/dashboard_15.py        # ダッシュボード http://loc
 | pace_training_analysis_20.py | ペース・調教分析 | — |
 | jockey_trainer_analysis_21.py | 騎手・調教師・3代ニックス | — |
 | statistical_tools_23.py | 統計分析・クラスタリング | — |
+| training_analysis_37.py | 調教マルチセッション集計（60日・速度Zスコア・トレンド） | keiba_data_features.csv に追記 |
+| trainer_analysis_38.py | 調教師特性（会場×距離別勝率・好調度スコア） | keiba_data_features.csv に追記 |
+| debut_analysis_39.py | **新馬戦強化**（騎手/調教師/父馬の新馬戦勝率・debut_score） | keiba_data_features.csv に追記 |
+| shogai_analysis_40.py | **障害戦強化**（騎手/調教師障害勝率・馬の経験数・shogai_score） | keiba_data_features.csv に追記 |
 
 ### PHASE 2 — 異常検知・自動学習
 | ファイル | 役割 |
@@ -58,6 +62,7 @@ streamlit run pipeline/dashboard_15.py        # ダッシュボード http://loc
 | odds_monitor_33.py | SHARP/STEAM/DRIFT 変動検知（過去データ分析） | data/odds_monitor_config.json |
 | odds_scraper_36.py | **Playwright リアルタイムオッズ取得**（セッション不要） | data/odds_snapshot_YYYYMMDD.json |
 | roi_tracker_12.py | 日次/週次/月次 回収率追跡 | — |
+| knowledge_curator_41.py | **知識ベース自動進化**（Haiku抽出→イベントソーシング→EV boost/特徴量反映） | data/knowledge_base/ |
 
 ### PHASE 5 — 発信
 | ファイル | 役割 |
@@ -65,7 +70,7 @@ streamlit run pipeline/dashboard_15.py        # ダッシュボード http://loc
 | claude_comment_06.py | Haiku API + prompt caching コメント生成 |
 | note_07.py | note.com 記事生成 |
 | notify_08.py | パイプラインレポート通知 |
-| multi_agent_v2_28.py | LangGraph 9エージェント協調（メイン） |
+| multi_agent_v2_28.py | **v3: 14エージェント協調**（血統×ペース×調教v2×調教師×新馬戦×障害戦×オッズシグナル 7並列 → ML→EV(新馬/障害専用式)→Supervisor→Risk→Commentary→Publisher） |
 | social_bot_27.py | X / Discord / Telegram / LINE 一括配信 |
 | dashboard_15.py | Streamlit 8タブ UI |
 

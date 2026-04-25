@@ -45,6 +45,7 @@ def fetch_data():
                 m.ketto1_bamei as chichi,
                 m.ketto2_bamei as haha,
                 m.ketto3_bamei as chichi_chichi,
+                m.ketto5_bamei as haha_chichi,
                 -- 馬場状態別成績
                 m.shiba_ryo_1chaku,
                 m.shiba_ryo_2chaku,

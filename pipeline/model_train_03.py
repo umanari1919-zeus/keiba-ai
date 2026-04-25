@@ -31,6 +31,29 @@ FEATURES = [
     'chichi_kyori', 'haha_kyori', 'chichi_track', 'haha_track',
     'kishu_kyori', 'kishu_track', 'barei_kyori', 'bataiju_kyori',
     'weeks_barei', 'kaishi_nige', 'kaishi_senko', 'futan_barei',
+    # ニックス指数（父×母父の相性）
+    'nick_index', 'nick_roi', 'nick_win_rate', 'nick_place_rate',
+    # 高度特徴量 (feature_advanced_19)
+    'post_win_rate', 'post_bias', 'inner_advantage',
+    'tenko_apt', 'shiba_baba_apt', 'dirt_baba_apt',
+    'ema3_chakujun', 'ema5_chakujun', 'ema10_chakujun', 'ema3_odds',
+    'weight_ema3', 'weight_up_trend', 'weight_down_trend',
+    'weight_big_change', 'weight_stability',
+    'futan_diff', 'age_futan_interaction', 'futan_increase',
+    'interval_bucket', 'interval_age', 'long_rest', 'tight_schedule',
+    'race_month', 'season', 'is_spring', 'is_summer', 'is_autumn', 'is_winter',
+    'kaikai_inner_rate', 'kaikai_outer_rate',
+    # ペース・調教 (pace_training_analysis_20)
+    'training_score', 'wood_intensity', 'hanro_intensity',
+    'dist_category', 'nige_dist_score', 'oikomi_dist_score',
+    'pace_consistency', 'track_change',
+    # 騎手・調教師・3代ニックス (jockey_trainer_analysis_21)
+    'jt_win_rate', 'jt_place_rate', 'jt_roi',
+    'jockey_course_dist_win_rate', 'trainer_course_win_rate',
+    'nick3_index', 'nick3_roi', 'nick3_win_rate',
+    # 統計特徴量 (statistical_tools_23)
+    'horse_cluster', 'cluster_win_rate',
+    'age_from_peak', 'is_peak_age', 'before_peak', 'past_peak', 'age_experience',
 ]
 
 def train_model():

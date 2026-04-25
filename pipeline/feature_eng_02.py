@@ -107,6 +107,30 @@ def feature_engineering():
 
     df = df.fillna(0)
 
+    # ニックス指数を結合
+    print("🐴 ニックス指数を結合中...")
+    nicks_path = "D:\\keiba_ai\\pedigree_output\\nicks_feature.csv"
+    try:
+        nicks_df = pd.read_csv(nicks_path, encoding="utf-8-sig")
+        nick_cols = ['chichi', 'haha_chichi',
+                     'nick_index', 'nick_roi', 'nick_win_rate', 'nick_place_rate']
+        nicks_df = nicks_df[nick_cols].drop_duplicates(subset=['chichi', 'haha_chichi'])
+        if 'haha_chichi' in df.columns:
+            df = df.merge(nicks_df, on=['chichi', 'haha_chichi'], how='left')
+        else:
+            for col in ['nick_index', 'nick_roi', 'nick_win_rate', 'nick_place_rate']:
+                df[col] = 0.0
+        df['nick_index']      = df['nick_index'].fillna(1.0)
+        df['nick_roi']        = df['nick_roi'].fillna(1.0)
+        df['nick_win_rate']   = df['nick_win_rate'].fillna(0.0)
+        df['nick_place_rate'] = df['nick_place_rate'].fillna(0.0)
+        hits = df['nick_index'].gt(1.0).sum()
+        print(f"  ✅ ニックス結合完了（nick_index>1.0：{hits:,}件）")
+    except FileNotFoundError:
+        print(f"  ⚠️ {nicks_path} が見つかりません。ニックス特徴量をゼロで埋めます")
+        for col in ['nick_index', 'nick_roi', 'nick_win_rate', 'nick_place_rate']:
+            df[col] = 0.0
+
     # 保存
     df.to_csv("D:\\keiba_ai\\keiba_data_features.csv",
               index=False, encoding="utf-8-sig")
