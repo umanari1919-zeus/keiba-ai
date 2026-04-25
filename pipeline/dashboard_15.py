@@ -28,6 +28,50 @@ except ImportError:
 BASE = "D:\\keiba_ai"
 YEAR = datetime.now().year
 
+# ── レースコード → 人間向け表示 ─────────────────────────────
+_JYO = {
+    '01':'札幌','02':'函館','03':'福島','04':'新潟','05':'東京',
+    '06':'中山','07':'中京','08':'京都','09':'阪神','10':'小倉',
+    '30':'門別','35':'盛岡','36':'水沢','42':'浦和','43':'船橋',
+    '44':'大井','45':'川崎','46':'金沢','47':'笠松','48':'名古屋',
+    '50':'園田','51':'姫路','54':'高知','55':'佐賀','58':'帯広',
+}
+
+_KYAKU = {'1':'逃げ','2':'先行','3':'中団','4':'追込','逃げ':'逃げ','先行':'先行','中団':'中団','追込':'追込'}
+_BABA  = {'0':'良','1':'稍重','2':'重','3':'不良','良':'良','稍重':'稍重','重':'重','不良':'不良'}
+
+def fmt_condition(cond: dict) -> str:
+    """condition dictを読みやすい文字列に変換"""
+    parts = []
+    if 'keibajo_code' in cond:
+        parts.append(_JYO.get(str(cond['keibajo_code']), cond['keibajo_code']))
+    if 'kyakushitsu' in cond:
+        parts.append(_KYAKU.get(str(cond['kyakushitsu']), cond['kyakushitsu']))
+    if 'baba_jotai' in cond or 'baba' in cond:
+        v = cond.get('baba_jotai', cond.get('baba', ''))
+        parts.append(_BABA.get(str(v), str(v)))
+    if 'dist_cat' in cond:
+        parts.append(f"{cond['dist_cat']}m級")
+    if 'grade_code' in cond:
+        parts.append(f"G{cond['grade_code']}")
+    if 'ninki_cat' in cond:
+        parts.append(f"人気{cond['ninki_cat']}")
+    if 'kishu' in cond:
+        parts.append(str(cond['kishu']))
+    if 'chichi' in cond:
+        parts.append(f"父:{cond['chichi']}")
+    return " / ".join(parts) if parts else str(cond)
+
+def fmt_race(code: str) -> str:
+    """'2026020710010511' → '2/7 小倉11R'"""
+    s = str(code).strip()
+    if len(s) != 16:
+        return s
+    mm, dd = s[4:6], s[6:8]
+    jyo = _JYO.get(s[8:10], s[8:10])
+    rno = s[14:16].lstrip('0') or '1'
+    return f"{int(mm)}/{int(dd)} {jyo}{rno}R"
+
 # ── CSS ────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -123,8 +167,13 @@ def load_tracker():
 @st.cache_data(ttl=60)
 def load_picks():
     files = sorted(glob.glob(os.path.join(BASE,"agent_picks_*.json")), reverse=True)
-    if not files: return None
-    return _jload(files[0])
+    if not files: return None, None
+    f = files[0]
+    # ファイル名から日付抽出: agent_picks_20260419.json → "2026/04/19"
+    base = os.path.basename(f)          # agent_picks_20260419.json
+    yyyymmdd = base.replace("agent_picks_","").replace(".json","")
+    picks_date = f"{yyyymmdd[:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}" if len(yyyymmdd)==8 else yyyymmdd
+    return _jload(f), picks_date
 
 @st.cache_data(ttl=300)
 def load_race_ranking():
@@ -235,16 +284,18 @@ st.caption(f"穴馬専門 高オッズMLシステム | {YEAR}年シーズン | K
 # ── タブ ────────────────────────────────────────────────────
 tabs = st.tabs([
     "⚡ ライブ予想", "📊 成績サマリー", "💰 資金管理",
-    "🏇 馬券戦略", "📈 モデル検証", "🔬 SHAP", "🧬 血統", "🔄 バックテスト"
+    "🏇 馬券戦略", "📈 モデル検証", "🔬 SHAP", "🧬 血統", "🔄 バックテスト", "📚 知識ベース"
 ])
-tab_live, tab_sum, tab_bk, tab_strat, tab_model, tab_shap, tab_blood, tab_bt = tabs
+tab_live, tab_sum, tab_bk, tab_strat, tab_model, tab_shap, tab_blood, tab_bt, tab_kb = tabs
 
 
 # ════════════════════════════════════════════════════════════
 # TAB 1: ライブ予想
 # ════════════════════════════════════════════════════════════
 with tab_live:
-    picks = load_picks()
+    picks, picks_date = load_picks()
+    today_str = datetime.now().strftime("%Y/%m/%d")
+    is_today = picks_date == today_str if picks_date else False
 
     if picks:
         gen = picks.get('generated_at','')[:16].replace('T',' ')
@@ -283,7 +334,11 @@ with tab_live:
               <div class="kpi-delta">{label}</div>
             </div>""", unsafe_allow_html=True)
 
-        st.markdown("<div class='sec-head'>🔥 本日の推奨ベット</div>", unsafe_allow_html=True)
+        if is_today:
+            st.markdown(f"<div class='sec-head'>🔥 推奨ベット（{picks_date}）</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div class='sec-head'>🔥 推奨ベット（{picks_date}）</div>", unsafe_allow_html=True)
+            st.warning(f"⚠️ 本日（{today_str}）のデータがありません。最新: {picks_date}　→ `python run_all.py --skip-train` を実行してください。")
 
         for i, bet in enumerate(approved, 1):
             ev  = bet['expected_value'] * 100
@@ -301,7 +356,7 @@ with tab_live:
 <div class="bet-card {grade_cls}">
   <div style="display:flex;justify-content:space-between;align-items:center">
     <div>
-      <strong style="font-size:1.1rem;color:#e6edf3">#{i} {bet['bamei']}</strong>
+      <strong style="font-size:1.1rem;color:#e6edf3">{fmt_race(bet.get('race_code',''))} {str(bet['umaban'])+"番 " if bet.get('umaban') else ""}{bet.get('bamei','')}</strong>
       &nbsp;
       <span class="badge badge-blue">{ticket}</span>
       <span class="badge badge-gold">{odds:.1f}倍</span>
@@ -519,10 +574,11 @@ with tab_strat:
                       <div class="kpi-val" style="color:{color}">{cnt}</div>
                       <div class="kpi-delta">レース</div></div>""", unsafe_allow_html=True)
 
-            top_s = rs_df[rs_df['grade']=='S'].head(8)
+            top_s = rs_df[rs_df['grade']=='S'].head(8).copy()
             if not top_s.empty:
+                top_s['レース'] = top_s['race_code'].apply(fmt_race)
                 if PLOTLY:
-                    fig = px.bar(top_s, x='value_score', y='race_code',
+                    fig = px.bar(top_s, x='value_score', y='レース',
                                  orientation='h', title="Grade S レース (荒れ×EV)",
                                  color='upset_score',
                                  color_continuous_scale=['#58a6ff','#f85149'])
@@ -550,9 +606,12 @@ with tab_strat:
 
             # EV比較テーブル（上位10件）
             st.markdown("**EV比較 TOP10**")
-            show = [c for c in ['race_code','ticket_type','est_odds','ev','recommended_bet']
-                    if c in tk_df.columns]
             top10 = tk_df.nlargest(10, 'ev') if 'ev' in tk_df.columns else tk_df.head(10)
+            top10 = top10.copy()
+            if 'race_code' in top10.columns:
+                top10.insert(0, 'レース', top10['race_code'].apply(fmt_race))
+            show = [c for c in ['レース','ticket_type','est_odds','ev','recommended_bet']
+                    if c in top10.columns]
             st.dataframe(top10[show] if show else top10,
                          use_container_width=True, hide_index=True)
         else:
@@ -814,8 +873,203 @@ with tab_bt:
     if not rs_df.empty:
         st.markdown("<div class='sec-head'>🏇 参戦推奨レース</div>", unsafe_allow_html=True)
         grade_filter = st.multiselect("グレードフィルタ", ['S','A','B','C'], default=['S','A'])
-        filtered = rs_df[rs_df['grade'].isin(grade_filter)].head(50)
+        filtered = rs_df[rs_df['grade'].isin(grade_filter)].head(50).copy()
+        if 'race_code' in filtered.columns:
+            filtered.insert(0, 'レース', filtered['race_code'].apply(fmt_race))
+            filtered = filtered.drop(columns=['race_code'])
         st.dataframe(filtered, use_container_width=True, hide_index=True)
+
+
+# ════════════════════════════════════════════════════════════
+# TAB 9: 知識ベース
+# ════════════════════════════════════════════════════════════
+with tab_kb:
+    KB_DIR  = os.path.join(BASE, "data", "knowledge_base")
+    LATEST  = os.path.join(KB_DIR, "LATEST.json")
+    CONF_LOG = os.path.join(KB_DIR, "confidence_history.csv")
+    CHANGELOG = os.path.join(KB_DIR, "changelog.md")
+
+    CAT_LABELS = {
+        "BLD": "血統", "JKY": "騎手", "TRK": "コース",
+        "MKT": "市場歪み", "TRN": "調教", "SEA": "季節",
+        "DBT": "新馬戦", "SHG": "障害戦",
+    }
+    CONF_SOFT, CONF_MEDIUM, CONF_HARD = 0.50, 0.70, 0.80
+
+    def _kb_color(conf: float) -> str:
+        if conf >= CONF_HARD:   return "#3fb950"
+        if conf >= CONF_MEDIUM: return "#e3b341"
+        if conf >= CONF_SOFT:   return "#58a6ff"
+        return "#8b949e"
+
+    if not os.path.exists(LATEST):
+        st.info("📚 知識ベースがまだ生成されていません。`python pipeline/knowledge_curator_41.py` を実行してください。")
+    else:
+        kb_state = json.load(open(LATEST, encoding="utf-8"))
+        active_items = {k: v for k, v in kb_state.items() if v.get("status") == "active"}
+        depr_items   = {k: v for k, v in kb_state.items() if v.get("status") == "deprecated"}
+
+        # ── KPI ────────────────────────────────────────────────
+        high_conf = sum(1 for v in active_items.values() if v.get("confidence", 0) >= CONF_HARD)
+        mid_conf  = sum(1 for v in active_items.values() if CONF_MEDIUM <= v.get("confidence", 0) < CONF_HARD)
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.markdown(f"""<div class="kpi"><div class="kpi-sub">アクティブ知見</div>
+              <div class="kpi-val" style="color:#58a6ff">{len(active_items)}</div></div>""",
+              unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"""<div class="kpi"><div class="kpi-sub">高確信度(≥0.80)</div>
+              <div class="kpi-val" style="color:#3fb950">{high_conf}</div></div>""",
+              unsafe_allow_html=True)
+        with c3:
+            st.markdown(f"""<div class="kpi"><div class="kpi-sub">中確信度(≥0.70)</div>
+              <div class="kpi-val" style="color:#e3b341">{mid_conf}</div></div>""",
+              unsafe_allow_html=True)
+        with c4:
+            st.markdown(f"""<div class="kpi"><div class="kpi-sub">廃止済み</div>
+              <div class="kpi-val" style="color:#8b949e">{len(depr_items)}</div></div>""",
+              unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── フィルタ ─────────────────────────────────────────
+        col_f1, col_f2, col_f3 = st.columns([2, 2, 1])
+        with col_f1:
+            cat_filter = st.multiselect(
+                "カテゴリ", list(CAT_LABELS.keys()),
+                default=list(CAT_LABELS.keys()),
+                format_func=lambda x: f"{x} {CAT_LABELS[x]}"
+            )
+        with col_f2:
+            conf_min = st.slider("最小 confidence", 0.0, 1.0, 0.0, 0.05)
+        with col_f3:
+            sort_by = st.selectbox("並び順", ["confidence↓", "sample_count↓", "作成日↑"])
+
+        # ── テーブル表示 ──────────────────────────────────────
+        rows = []
+        for item_id, item in active_items.items():
+            cat  = item.get("category", "?")
+            conf = item.get("confidence", 0.0)
+            if cat not in cat_filter or conf < conf_min:
+                continue
+            rows.append({
+                "ID":       item_id,
+                "カテゴリ": f"{cat} {CAT_LABELS.get(cat,'')}",
+                "条件":     fmt_condition(item.get("condition", {})),
+                "知見":     item.get("claim", "")[:60],
+                "confidence": conf,
+                "n":        item.get("sample_count", 0),
+                "lift推定":  item.get("metrics", {}).get("estimated_lift", 1.0),
+                "作成":     item.get("created_at", ""),
+                "確認日":   item.get("last_verified", ""),
+                "使われ方": (
+                    "🔴 ハードルール" if conf >= CONF_HARD else
+                    "🟡 特徴量追加"   if conf >= CONF_MEDIUM else
+                    "🔵 EV boost"     if conf >= CONF_SOFT else
+                    "⚫ 待機中"
+                ),
+            })
+
+        if sort_by == "confidence↓":
+            rows.sort(key=lambda x: x["confidence"], reverse=True)
+        elif sort_by == "sample_count↓":
+            rows.sort(key=lambda x: x["n"], reverse=True)
+        else:
+            rows.sort(key=lambda x: x["作成"])
+
+        st.markdown(f"<div class='sec-head'>📋 知見一覧（{len(rows)}件）</div>", unsafe_allow_html=True)
+
+        if rows:
+            df_kb = pd.DataFrame(rows)
+            st.dataframe(
+                df_kb.style.background_gradient(subset=["confidence"], cmap="RdYlGn", vmin=0, vmax=1)
+                     .format({"confidence": "{:.3f}", "lift推定": "{:.2f}x", "n": "{:,}"}),
+                use_container_width=True, hide_index=True
+            )
+        else:
+            st.info("フィルタ条件に一致する知見がありません。")
+
+        # ── 信頼度推移グラフ ─────────────────────────────────
+        if os.path.exists(CONF_LOG):
+            conf_df = pd.read_csv(CONF_LOG, parse_dates=["date"])
+            if not conf_df.empty and PLOTLY:
+                st.markdown("<div class='sec-head'>📈 信頼度推移（上位10知見）</div>", unsafe_allow_html=True)
+                top_ids = (
+                    conf_df.groupby("id")["confidence"].last()
+                    .nlargest(10).index.tolist()
+                )
+                plot_df = conf_df[conf_df["id"].isin(top_ids)]
+                fig = px.line(
+                    plot_df, x="date", y="confidence", color="id",
+                    title="知見 confidence 推移",
+                )
+                fig.add_hline(y=CONF_HARD,   line_dash="dash", line_color="#3fb950",
+                              annotation_text="ハードルール(0.80)")
+                fig.add_hline(y=CONF_MEDIUM, line_dash="dash", line_color="#e3b341",
+                              annotation_text="特徴量追加(0.70)")
+                fig.add_hline(y=CONF_SOFT,   line_dash="dot",  line_color="#58a6ff",
+                              annotation_text="EVboost(0.50)")
+                fig.update_layout(**_plotly_theme(), height=350)
+                st.plotly_chart(fig, use_container_width=True)
+
+        # ── カテゴリ別 分布 ──────────────────────────────────
+        if active_items and PLOTLY:
+            st.markdown("<div class='sec-head'>🗂️ カテゴリ別 知見数・平均confidence</div>", unsafe_allow_html=True)
+            from collections import Counter
+            cat_counts = Counter(v.get("category") for v in active_items.values())
+            cat_confs  = {
+                cat: round(
+                    sum(v.get("confidence", 0) for v in active_items.values()
+                        if v.get("category") == cat) / max(cnt, 1), 3
+                )
+                for cat, cnt in cat_counts.items()
+            }
+            cat_df = pd.DataFrame([
+                {"カテゴリ": f"{c} {CAT_LABELS.get(c,'')}", "件数": n, "平均confidence": cat_confs.get(c, 0)}
+                for c, n in cat_counts.most_common()
+            ])
+            c_left, c_right = st.columns(2)
+            with c_left:
+                fig_pie = px.pie(cat_df, names="カテゴリ", values="件数",
+                                 title="カテゴリ構成比", hole=0.4)
+                fig_pie.update_layout(**_plotly_theme(), height=280)
+                st.plotly_chart(fig_pie, use_container_width=True)
+            with c_right:
+                fig_bar = px.bar(cat_df, x="カテゴリ", y="平均confidence",
+                                 title="カテゴリ別 平均confidence",
+                                 color="平均confidence",
+                                 color_continuous_scale=["#f85149", "#e3b341", "#3fb950"])
+                fig_bar.add_hline(y=CONF_HARD, line_dash="dash", line_color="#8b949e")
+                fig_bar.update_layout(**_plotly_theme(), height=280, coloraxis_showscale=False)
+                st.plotly_chart(fig_bar, use_container_width=True)
+
+        # ── 変更履歴 ────────────────────────────────────────
+        if os.path.exists(CHANGELOG):
+            with st.expander("📋 変更履歴 (changelog.md)"):
+                st.markdown(open(CHANGELOG, encoding="utf-8").read())
+
+        # ── 手動実行ボタン ───────────────────────────────────
+        st.markdown("<div class='sec-head'>⚙️ 手動操作</div>", unsafe_allow_html=True)
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("🔄 知識ベースを今すぐ更新（直近7日）"):
+                with st.spinner("Haiku で知見を抽出中..."):
+                    try:
+                        from pipeline.knowledge_curator_41 import run_knowledge_curator
+                        run_knowledge_curator(days=7)
+                        st.success("更新完了！ページを再読込してください。")
+                    except Exception as e:
+                        st.error(f"エラー: {e}")
+        with b2:
+            if st.button("📸 スナップショットを強制作成"):
+                with st.spinner("スナップ作成中..."):
+                    try:
+                        from pipeline.knowledge_curator_41 import run_knowledge_curator
+                        run_knowledge_curator(days=7, force_snapshot=True)
+                        st.success("スナップ作成完了！")
+                    except Exception as e:
+                        st.error(f"エラー: {e}")
 
 
 # ── フッター ─────────────────────────────────────────────────

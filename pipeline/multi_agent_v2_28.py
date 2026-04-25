@@ -1,15 +1,20 @@
 """
 うまなり地蔵AI マルチエージェント v2
 ─────────────────────────────────────
-9エージェント 並列・階層型アーキテクチャ
+14エージェント 並列・階層型アーキテクチャ
 
 Supervisor (Claude Sonnet) が全体を統括
   ├── [並列フェーズ]
-  │   ├── DataAgent     DB データ取得
-  │   ├── BloodAgent    血統・ニックス分析
-  │   └── PaceAgent     ペース・調教分析
+  │   ├── DataAgent       DB データ取得
+  │   ├── BloodAgent      血統・ニックス分析
+  │   ├── PaceAgent       ペース・調教分析
+  │   ├── TrainingAgent   調教マルチセッション v2
+  │   ├── TrainerAgent    調教師特性分析
+  │   ├── DebutAgent      新馬戦強化分析
+  │   ├── ShogaiAgent     障害戦強化分析
+  │   └── OddsSignalAgent SHARP/STEAM シグナル
   ├── MLEnsembleAgent   LGB+XGB+CB+NN アンサンブル
-  ├── EVAgent           期待値フィルタ
+  ├── EVAgent           期待値フィルタ（新馬戦・障害戦専用式）
   ├── RiskAgent         高度リスク管理
   ├── CommentaryAgent   Claude Haiku コメント生成
   └── PublisherAgent    全 SNS 一括配信
@@ -62,6 +67,7 @@ _ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 class HorsePick(TypedDict):
     race_code:            str
+    umaban:               int
     bamei:                str
     odds:                 float
     win_probability:      float
@@ -77,20 +83,26 @@ class HorsePick(TypedDict):
     blood_score:          float
     trainer_hot_cold:     float
     trainer_specialty:    float
-    odds_signal_boost:    float
-    confidence:           float   # 総合確信度 0〜1
+    odds_signal_boost:       float
+    is_shogai:               int
+    jockey_shogai_win_rate:  float
+    trainer_shogai_win_rate: float
+    shogai_keiken:           int
+    shogai_score:            float
+    confidence:              float   # 総合確信度 0〜1
 
 
 class AgentState(TypedDict):
     year:             int
     bankroll:         float
-    # フェーズ1 並列出力（5エージェント）
+    # フェーズ1 並列出力（7エージェント）
     data_ready:       bool
     blood_results:    List[Dict]
     pace_results:     List[Dict]
     training_results: List[Dict]   # TrainingAgent: training_score_v2 / form
     trainer_results:  List[Dict]   # TrainerAgent: hot_cold / specialty
     debut_results:    List[Dict]   # DebutAgent: 新馬戦特化スコア
+    shogai_results:   List[Dict]   # ShogaiAgent: 障害戦特化スコア
     odds_signals:     List[Dict]   # OddsSignalAgent: SHARP/STEAM race_code別
     # フェーズ2 ML
     ev_candidates:    List[Dict]
@@ -402,6 +414,49 @@ def debut_agent(state: AgentState) -> AgentState:
 
 
 # ─────────────────────────────────────────────────────────────
+# エージェント 3c3: ShogaiAgent（障害戦強化）
+# ─────────────────────────────────────────────────────────────
+
+def shogai_agent(state: AgentState) -> AgentState:
+    tag = "[ShogaiAgent]"
+    log = [f"{tag} 起動 {_ts()}"]
+
+    results: List[Dict] = []
+    try:
+        if not os.path.exists(FEAT_FILE):
+            return {**state, "shogai_results": [], "log": log}
+
+        df = pd.read_csv(FEAT_FILE, encoding="utf-8-sig", low_memory=False,
+                         on_bad_lines='skip')
+        year = state.get("year", datetime.now().year)
+        df = df[df["kaisai_nen"] == year].fillna(0)
+
+        if "is_shogai" not in df.columns:
+            log.append(f"{tag} 障害特徴量なし（shogai_analysis_40 未実行？）")
+            return {**state, "shogai_results": [], "log": log}
+
+        shogai_df = df[df["is_shogai"] == 1]
+        for _, row in shogai_df.iterrows():
+            results.append({
+                "race_code":                str(row.get("race_code", "")),
+                "ketto_toroku_bango":       str(row.get("ketto_toroku_bango", "")),
+                "bamei":                    str(row.get("bamei", "")),
+                "shogai_score":             float(row.get("shogai_score", 0)),
+                "shogai_keiken":            int(row.get("shogai_keiken", 0)),
+                "jockey_shogai_win_rate":   float(row.get("jockey_shogai_win_rate", 0)),
+                "trainer_shogai_win_rate":  float(row.get("trainer_shogai_win_rate", 0)),
+            })
+
+        log.append(f"{tag} 障害レースエントリ: {len(results)}頭  "
+                   f"shogai_score≥0.5: {sum(1 for r in results if r['shogai_score']>=0.5)}頭")
+    except Exception as e:
+        err = f"{tag} エラー: {e}"
+        return {**state, "shogai_results": [], "errors": [err], "log": log + [err]}
+
+    return {**state, "shogai_results": results, "log": log}
+
+
+# ─────────────────────────────────────────────────────────────
 # エージェント 3d: OddsSignalAgent（SHARP/STEAM シグナル検知）
 # ─────────────────────────────────────────────────────────────
 
@@ -482,6 +537,7 @@ def merge_parallel(state: AgentState) -> AgentState:
            f"training={len(state.get('training_results', []))} "
            f"trainer={len(state.get('trainer_results', []))} "
            f"debut={len(state.get('debut_results', []))} "
+           f"shogai={len(state.get('shogai_results', []))} "
            f"signals={len(state.get('odds_signals', []))}"]
     return {**state, "log": log}
 
@@ -509,9 +565,20 @@ def ml_ensemble_agent(state: AgentState) -> AgentState:
         weights   = saved.get("ensemble_weights", [0.5, 0.3, 0.2])
         log.append(f"{tag} モデル読込 ({len(features)}特徴量)")
 
-        df = pd.read_csv(FEAT_FILE, encoding="utf-8-sig", low_memory=False)
         year = state.get("year", datetime.now().year)
-        df   = df[df["kaisai_nen"] == year].fillna(0)
+
+        # 当日出馬表ファイルがあれば優先使用（バックテスト回避）
+        today_str  = datetime.now().strftime("%Y%m%d")
+        today_file = os.path.join(DATA_DIR, f"today_entries_{today_str}.csv")
+        if os.path.exists(today_file):
+            df = pd.read_csv(today_file, encoding="utf-8-sig", low_memory=False)
+            log.append(f"{tag} 当日出馬表使用: {today_file} ({len(df)}頭)")
+        else:
+            df = pd.read_csv(FEAT_FILE, encoding="utf-8-sig", low_memory=False)
+            df = df[df["kaisai_nen"] == year]
+            log.append(f"{tag} 特徴量CSV使用: {len(df)}行 (バックテストモード)")
+
+        df = df.fillna(0)
         if len(df) == 0:
             return {**state, "ev_candidates": [], "log": log + [f"{tag} {year}年データなし"]}
 
@@ -626,10 +693,47 @@ def ml_ensemble_agent(state: AgentState) -> AgentState:
             ).get("trainer_debut_win_rate", 0.1), axis=1
         )
 
+        # 障害戦スコア（shogai_analysis_40）をマージ
+        shogai_map: Dict[str, Dict] = {}
+        for s in state.get("shogai_results", []):
+            key = str(s.get("race_code", "")) + str(s.get("bamei", ""))
+            shogai_map[key] = s
+        df["is_shogai_enr"] = df.apply(
+            lambda r: 1 if (str(r.get("race_code",""))+str(r.get("bamei",""))) in shogai_map else 0,
+            axis=1
+        )
+        df["shogai_score_enr"] = df.apply(
+            lambda r: shogai_map.get(
+                str(r.get("race_code",""))+str(r.get("bamei","")), {}
+            ).get("shogai_score", 0.0), axis=1
+        )
+        df["jockey_shogai_rate_enr"] = df.apply(
+            lambda r: shogai_map.get(
+                str(r.get("race_code",""))+str(r.get("bamei","")), {}
+            ).get("jockey_shogai_win_rate", 0.0), axis=1
+        )
+        df["trainer_shogai_rate_enr"] = df.apply(
+            lambda r: shogai_map.get(
+                str(r.get("race_code",""))+str(r.get("bamei","")), {}
+            ).get("trainer_shogai_win_rate", 0.0), axis=1
+        )
+        df["shogai_keiken_enr"] = df.apply(
+            lambda r: shogai_map.get(
+                str(r.get("race_code",""))+str(r.get("bamei","")), {}
+            ).get("shogai_keiken", 0), axis=1
+        )
+
         # オッズシグナルをレース単位でマージ
+        # netkeiba 12桁 (YYYYKKAANNRR) と JV 16桁 (YYYYMMDDKKAANNRR) を統一
+        # 変換: jv16[:4] + jv16[8:] = netkeiba12
+        def _to_net12(key: str) -> str:
+            k = str(key).strip()
+            return k[:4] + k[8:] if len(k) == 16 else k
+
         signal_map: Dict[str, float] = {}
         for s in state.get("odds_signals", []):
-            rc_key = s.get("race_id", s.get("race_code", ""))
+            raw = s.get("race_id", s.get("race_code", ""))
+            rc_key = _to_net12(raw)
             signal_map[rc_key] = signal_map.get(rc_key, 0) + s.get("boost", 0)
 
         # EV フィルタ（EV≥5% かつオッズ≥10倍）
@@ -644,6 +748,7 @@ def ml_ensemble_agent(state: AgentState) -> AgentState:
             rc_str = str(rc)
             candidates.append({
                 "race_code":          rc_str,
+                "umaban":             int(best.get("umaban", 0)),
                 "bamei":              str(best.get("bamei", "")),
                 "odds":               float(best["odds_decimal"]),
                 "win_probability":    float(best["win_probability"]),
@@ -654,12 +759,17 @@ def ml_ensemble_agent(state: AgentState) -> AgentState:
                 "training_form":      str(best.get("training_form_enr", "D")),
                 "trainer_hot_cold":   float(best.get("trainer_hot_cold_enr", 0.5)),
                 "trainer_specialty":  float(best.get("trainer_specialty_enr", 0.5)),
-                "odds_signal_boost":  float(signal_map.get(rc_str, 0)),
-                "is_debut":           int(best.get("is_debut_enr", 0)),
-                "debut_score":        float(best.get("debut_score_enr", 0)),
-                "jockey_debut_rate":  float(best.get("jockey_debut_rate_enr", 0.1)),
-                "trainer_debut_rate": float(best.get("trainer_debut_rate_enr", 0.1)),
-                "jt_win_rate":        float(best.get("jt_win_rate", 0)),
+                "odds_signal_boost":  float(signal_map.get(_to_net12(rc_str), 0)),
+                "is_debut":             int(best.get("is_debut_enr", 0)),
+                "debut_score":          float(best.get("debut_score_enr", 0)),
+                "jockey_debut_rate":    float(best.get("jockey_debut_rate_enr", 0.1)),
+                "trainer_debut_rate":   float(best.get("trainer_debut_rate_enr", 0.1)),
+                "is_shogai":            int(best.get("is_shogai_enr", 0)),
+                "shogai_score":         float(best.get("shogai_score_enr", 0)),
+                "jockey_shogai_rate":   float(best.get("jockey_shogai_rate_enr", 0)),
+                "trainer_shogai_rate":  float(best.get("trainer_shogai_rate_enr", 0)),
+                "shogai_keiken":        int(best.get("shogai_keiken_enr", 0)),
+                "jt_win_rate":          float(best.get("jt_win_rate", 0)),
                 "nick_index":         float(best.get("nick_index", 1.0)),
                 "kishumei":           str(best.get("kishumei_ryakusho", "")),
                 "barei":              int(best.get("barei", 0)),
@@ -725,9 +835,34 @@ def ev_agent(state: AgentState) -> AgentState:
                 0.6 * min(c.get("training_score_v2", 0) / 0.8, 1.0)
                 + 0.4 * form_bonus, 1.0)
 
-            is_debut = c.get("is_debut", 0) == 1
+            is_debut  = c.get("is_debut", 0) == 1
+            is_shogai = c.get("is_shogai", 0) == 1
 
-            if is_debut:
+            # ── 知識ベース EVboost（全レース共通） ────────────────────
+            kb_boost = 0.0
+            try:
+                from pipeline.knowledge_curator_41 import load_ev_boost_for_race
+                # c に df_row 相当の情報があるので Series に変換して渡す
+                _row = pd.Series(c)
+                kb_boost = load_ev_boost_for_race(rc, _row)
+            except Exception:
+                pass
+
+            if is_shogai:
+                # ── 障害戦専用確信度フォーミュラ ─────────────────────────
+                # 経験(30%) + 騎手障害(25%) + 調教師障害(20%) + 調教v2(15%) + 血統(10%)
+                keiken_norm  = min(c.get("shogai_keiken", 0) / 20.0, 1.0)
+                j_sh_norm    = min(c.get("jockey_shogai_rate", 0) / 0.20, 1.0)
+                t_sh_norm    = min(c.get("trainer_shogai_rate", 0) / 0.15, 1.0)
+                confidence = min(1.0, max(0.0,
+                    0.30 * keiken_norm                                           # 障害経験
+                  + 0.25 * j_sh_norm                                             # 騎手障害勝率
+                  + 0.20 * t_sh_norm                                             # 調教師障害勝率
+                  + 0.15 * train_v2_norm                                         # 調教スコアv2
+                  + 0.10 * min((c["blood_score"] - 1.0) / 2.0, 1.0)             # 血統
+                  + kb_boost                                                     # 知識ベースboost
+                ))
+            elif is_debut:
                 # ── 新馬戦専用確信度フォーミュラ ─────────────────────────
                 # 過去成績なし → 調教・血統・騎手調教師の新馬戦実績を重視
                 j_d_norm = min(c.get("jockey_debut_rate",  0.1) / 0.25, 1.0)
@@ -738,6 +873,7 @@ def ev_agent(state: AgentState) -> AgentState:
                   + 0.20 * t_d_norm                                          # 調教師の新馬戦勝率
                   + 0.15 * j_d_norm                                          # 騎手の新馬戦勝率
                   + 0.05 * c.get("odds_signal_boost", 0.0)                   # オッズシグナル
+                  + kb_boost                                                  # 知識ベースboost
                 ))
             else:
                 # ── 通常レース確信度フォーミュラ（6シグナル × 重み）──────
@@ -749,6 +885,7 @@ def ev_agent(state: AgentState) -> AgentState:
                   + 0.12 * min(c["jt_win_rate"] * 5, 1.0)                   # 騎手×調教師
                   + 0.10 * race_val                                          # レース価値
                   + c.get("odds_signal_boost", 0.0)                         # SHARP/STEAMシグナル
+                  + kb_boost                                                  # 知識ベースboost
                 ))
 
             # 最適馬券種を選択
@@ -766,6 +903,7 @@ def ev_agent(state: AgentState) -> AgentState:
 
             predictions.append({
                 "race_code":          rc,
+                "umaban":             c.get("umaban", 0),
                 "bamei":              c["bamei"],
                 "odds":               odds,
                 "win_probability":    p,
@@ -782,11 +920,16 @@ def ev_agent(state: AgentState) -> AgentState:
                 "trainer_hot_cold":   c.get("trainer_hot_cold", 0.5),
                 "trainer_specialty":  c.get("trainer_specialty", 0.5),
                 "odds_signal_boost":  c.get("odds_signal_boost", 0.0),
-                "is_debut":           c.get("is_debut", 0),
-                "debut_score":        c.get("debut_score", 0.0),
-                "jockey_debut_rate":  c.get("jockey_debut_rate", 0.1),
-                "trainer_debut_rate": c.get("trainer_debut_rate", 0.1),
-                "confidence":         round(confidence, 3),
+                "is_debut":             c.get("is_debut", 0),
+                "debut_score":          c.get("debut_score", 0.0),
+                "jockey_debut_rate":    c.get("jockey_debut_rate", 0.1),
+                "trainer_debut_rate":   c.get("trainer_debut_rate", 0.1),
+                "is_shogai":            c.get("is_shogai", 0),
+                "shogai_score":         c.get("shogai_score", 0.0),
+                "jockey_shogai_win_rate":  c.get("jockey_shogai_rate", 0.0),
+                "trainer_shogai_win_rate": c.get("trainer_shogai_rate", 0.0),
+                "shogai_keiken":        c.get("shogai_keiken", 0),
+                "confidence":           round(confidence, 3),
                 "ticket_type":        ticket_type,
                 "ticket_odds":        ticket_odds,
                 "race_value":         round(race_val, 3),
@@ -1020,16 +1163,21 @@ def commentary_agent(state: AgentState) -> AgentState:
         hc     = bet.get("trainer_hot_cold", 0.5)
         sig    = bet.get("odds_signal_boost", 0.0)
 
-        is_debut = bet.get("is_debut", 0) == 1
-        debut_sc = bet.get("debut_score", 0.0)
+        is_debut  = bet.get("is_debut", 0) == 1
+        debut_sc  = bet.get("debut_score", 0.0)
+        is_shogai = bet.get("is_shogai", 0) == 1
+        shogai_sc = bet.get("shogai_score", 0.0)
+        sh_keiken = bet.get("shogai_keiken", 0)
+        j_sh_rate = bet.get("jockey_shogai_win_rate", 0.0)
 
         if _ANTHROPIC_KEY:
-            debut_note = f" 新馬戦(デビュースコア:{debut_sc:.2f})" if is_debut else ""
+            debut_note  = f" 新馬戦(デビュースコア:{debut_sc:.2f})" if is_debut else ""
+            shogai_note = f" 障害戦(経験{sh_keiken}戦・騎手障害勝率{j_sh_rate:.0%})" if is_shogai else ""
             user_msg = (
                 f"馬名:{bamei} オッズ:{odds:.1f}倍 EV:{ev:.0f}% "
                 f"確信度:{conf:.0f}% 血統相性:{blood:.2f} "
                 f"調教フォーム:{form} 調教師好調度:{hc:.2f} "
-                f"オッズシグナル:{'SHARP上昇' if sig>0.05 else '通常'}{debut_note}"
+                f"オッズシグナル:{'SHARP上昇' if sig>0.05 else '通常'}{debut_note}{shogai_note}"
             )
             comment = _call_claude(
                 system=_PERSONA, user=user_msg,
@@ -1037,7 +1185,12 @@ def commentary_agent(state: AgentState) -> AgentState:
             )
         else:
             # テンプレートフォールバック（シグナル優先度順）
-            if is_debut and debut_sc >= 0.7:
+            if is_shogai and shogai_sc >= 0.6:
+                comment = (f"障害巧者。経験{sh_keiken}戦×騎手障害勝率{j_sh_rate:.0%}。"
+                           f"{odds:.1f}倍の障害穴馬候補。")
+            elif is_shogai:
+                comment = f"障害出走。経験{sh_keiken}戦、スコア{shogai_sc:.2f}。{odds:.1f}倍注目。"
+            elif is_debut and debut_sc >= 0.7:
                 j_dr = bet.get("jockey_debut_rate", 0.1)
                 t_dr = bet.get("trainer_debut_rate", 0.1)
                 comment = (f"新馬戦注目馬。調教A級×騎手新馬{j_dr:.0%}×"
@@ -1213,11 +1366,11 @@ def build_graph() -> StateGraph:
 # ─────────────────────────────────────────────────────────────
 
 def _run_parallel_analysis(state: AgentState) -> AgentState:
-    """5エージェントを Python スレッドで並列実行する。"""
+    """7エージェントを Python スレッドで並列実行する。"""
     import threading
 
     results: dict = {k: state for k in
-                     ("blood", "pace", "training", "trainer", "odds_signal")}
+                     ("blood", "pace", "training", "trainer", "debut", "shogai", "odds_signal")}
 
     def run(key, fn):
         results[key] = fn(state)
@@ -1228,6 +1381,7 @@ def _run_parallel_analysis(state: AgentState) -> AgentState:
         threading.Thread(target=run, args=("training",    training_agent)),
         threading.Thread(target=run, args=("trainer",     trainer_agent)),
         threading.Thread(target=run, args=("debut",       debut_agent)),
+        threading.Thread(target=run, args=("shogai",      shogai_agent)),
         threading.Thread(target=run, args=("odds_signal", odds_signal_agent)),
     ]
     for t in threads:
@@ -1248,6 +1402,7 @@ def _run_parallel_analysis(state: AgentState) -> AgentState:
         "training_results": results["training"].get("training_results", []),
         "trainer_results":  results["trainer"].get("trainer_results", []),
         "debut_results":    results["debut"].get("debut_results", []),
+        "shogai_results":   results["shogai"].get("shogai_results", []),
         "odds_signals":     results["odds_signal"].get("odds_signals", []),
         "log":    all_log,
         "errors": all_errors,
@@ -1282,6 +1437,7 @@ def run_multi_agent_v2(year: Optional[int] = None) -> AgentState:
         "training_results": [],
         "trainer_results":  [],
         "debut_results":    [],
+        "shogai_results":   [],
         "odds_signals":     [],
         "ev_candidates":    [],
         "predictions":      [],
@@ -1301,12 +1457,13 @@ def run_multi_agent_v2(year: Optional[int] = None) -> AgentState:
         print("  ⚠️ データ取得失敗 → 中断")
         return state
 
-    # ── フェーズ2: 並列分析（5エージェント同時） ──
-    print("  🔀 Phase 2: 並列分析（血統×ペース×調教v2×調教師×新馬戦×オッズシグナル）")
+    # ── フェーズ2: 並列分析（7エージェント同時） ──
+    print("  🔀 Phase 2: 並列分析（血統×ペース×調教v2×調教師×新馬戦×障害戦×オッズシグナル）")
     state = _run_parallel_analysis(state)
     print(f"    blood={len(state['blood_results'])} pace={len(state['pace_results'])} "
           f"training={len(state['training_results'])} trainer={len(state['trainer_results'])} "
-          f"debut={len(state['debut_results'])} signals={len(state['odds_signals'])}")
+          f"debut={len(state['debut_results'])} shogai={len(state['shogai_results'])} "
+          f"signals={len(state['odds_signals'])}")
 
     # ── フェーズ3: ML アンサンブル ──
     print("  🤖 Phase 3: ML アンサンブル")
