@@ -563,9 +563,209 @@ def run_full_pedigree_analysis(year_from: int = 2020,
     }
 
 
+# ──────────────────────────────────────────────────────────────
+# DB書き出し関数群（pedigree_ancestor / pedigree_metrics テーブル）
+# ──────────────────────────────────────────────────────────────
+
+def save_pedigree_ancestor_to_db(
+    horse_id: str,
+    pedigree: dict,
+    data_snapshot_id: str = "",
+) -> int:
+    """
+    build_pedigree_5gen() の結果を pedigree_ancestor テーブルに upsert する。
+    Returns: 書き込み行数
+    """
+    if not pedigree:
+        return 0
+
+    # 位置ラベル → 世代番号マッピング
+    gen_map = {
+        "父": 1, "母": 1,
+        "父父": 2, "父母": 2, "母父": 2, "母母": 2,
+        "父父父": 3, "父父母": 3, "父母父": 3, "父母母": 3,
+        "母父父": 3, "母父母": 3, "母母父": 3, "母母母": 3,
+    }
+    for k in GEN5_LABELS:
+        gen_map[k] = 4  # 5代目は generation=4 として扱う（1-indexed offset 1）
+
+    rows = []
+    for pos_label, ancestor_name in pedigree.items():
+        if not ancestor_name:
+            continue
+        rows.append({
+            "horse_id":       horse_id,
+            "generation":     gen_map.get(pos_label, 5),
+            "position_label": pos_label,
+            "ancestor_id":    ancestor_name,   # 名前をIDとして代用（JBIS ID未接続時）
+            "ancestor_name":  ancestor_name,
+        })
+
+    if not rows:
+        return 0
+
+    sql = """
+        INSERT INTO pedigree_ancestor
+            (horse_id, generation, position_label, ancestor_id, ancestor_name, updated_at)
+        VALUES
+            (%(horse_id)s, %(generation)s, %(position_label)s,
+             %(ancestor_id)s, %(ancestor_name)s, now())
+        ON CONFLICT (horse_id, generation, position_label) DO UPDATE
+          SET ancestor_id   = EXCLUDED.ancestor_id,
+              ancestor_name = EXCLUDED.ancestor_name,
+              updated_at    = now()
+    """
+    import psycopg2
+    conn = psycopg2.connect(DB_URL.replace("postgresql+psycopg2://", "postgresql://")
+                            .replace("postgresql://", "postgresql://"))
+    with conn, conn.cursor() as cur:
+        for r in rows:
+            cur.execute(sql, r)
+    conn.close()
+    return len(rows)
+
+
+def save_pedigree_metrics_to_db(
+    horse_id: str,
+    inbreeding_result: dict,
+    nick_score: float = 0.0,
+    nick_sample_size: int = 0,
+    data_snapshot_id: str = "",
+) -> None:
+    """
+    detect_inbreeding() の結果と nick_score を pedigree_metrics テーブルに upsert する。
+    """
+    inbreeding_coeff      = inbreeding_result.get("nc_coefficient", 0.0)
+    inbreeding_components = {
+        k: len(v)
+        for k, v in inbreeding_result.get("inbred_ancestors", {}).items()
+    }
+
+    # outcross_index: 1 - (共通祖先数 / 30 最大想定)
+    inbred_count   = inbreeding_result.get("inbred_count", 0)
+    outcross_index = max(0.0, 1.0 - inbred_count / 30)
+
+    sql = """
+        INSERT INTO pedigree_metrics
+            (horse_id, true_nicks_score, nick_sample_size,
+             inbreeding_coeff, inbreeding_components, outcross_index,
+             data_snapshot_id, computed_at)
+        VALUES
+            (%(horse_id)s, %(nick_score)s, %(nick_sample_size)s,
+             %(inbreeding_coeff)s, %(inbreeding_components)s, %(outcross_index)s,
+             %(snapshot_id)s, now())
+        ON CONFLICT (horse_id) DO UPDATE
+          SET true_nicks_score      = EXCLUDED.true_nicks_score,
+              nick_sample_size      = EXCLUDED.nick_sample_size,
+              inbreeding_coeff      = EXCLUDED.inbreeding_coeff,
+              inbreeding_components = EXCLUDED.inbreeding_components,
+              outcross_index        = EXCLUDED.outcross_index,
+              data_snapshot_id      = EXCLUDED.data_snapshot_id,
+              computed_at           = now()
+    """
+    import psycopg2, json as _json
+    conn = psycopg2.connect(DB_URL.replace("postgresql+psycopg2://", "postgresql://"))
+    with conn, conn.cursor() as cur:
+        cur.execute(sql, {
+            "horse_id":             horse_id,
+            "nick_score":           nick_score,
+            "nick_sample_size":     nick_sample_size,
+            "inbreeding_coeff":     inbreeding_coeff,
+            "inbreeding_components": _json.dumps(inbreeding_components, ensure_ascii=False),
+            "outcross_index":       outcross_index,
+            "snapshot_id":          data_snapshot_id,
+        })
+    conn.close()
+
+
+def run_pedigree_db_batch(
+    limit: int = 200,
+    data_snapshot_id: str = "",
+    year_from: int = 2020,
+) -> dict:
+    """
+    kyosoba_master2 から馬を取得し、pedigree_ancestor / pedigree_metrics に一括書き出す。
+
+    Parameters
+    ----------
+    limit           : 処理する馬の最大数（初回は小さく設定して確認）
+    data_snapshot_id: スナップショットID
+    year_from       : 対象年以降に出走実績のある馬のみ処理
+
+    Returns
+    -------
+    dict: {"processed": N, "ancestor_rows": M, "metrics_rows": K, "errors": [...]}
+    """
+    engine   = _engine()
+    query    = text("""
+        SELECT DISTINCT m.ketto_toroku_bango, m.bamei
+        FROM kyosoba_master2 m
+        JOIN umagoto_race_joho u
+          ON u.ketto_toroku_bango = m.ketto_toroku_bango
+        WHERE u.kaisai_nen::int >= :y
+          AND m.bamei IS NOT NULL
+          AND m.bamei <> ''
+        LIMIT :lim
+    """)
+
+    with engine.connect() as conn:
+        rows = conn.execute(query, {"y": year_from, "lim": limit}).fetchall()
+
+    processed     = 0
+    ancestor_rows = 0
+    metrics_rows  = 0
+    errors        = []
+
+    print(f"[pedigree_batch] {len(rows)}頭の血統をDBに書き出し中...")
+    for i, (horse_id, bamei) in enumerate(rows, 1):
+        try:
+            pedigree = build_pedigree_5gen(bamei)
+            if not pedigree:
+                continue
+
+            n = save_pedigree_ancestor_to_db(
+                horse_id=str(horse_id),
+                pedigree=pedigree,
+                data_snapshot_id=data_snapshot_id,
+            )
+            ancestor_rows += n
+
+            inbreeding = detect_inbreeding(pedigree)
+            save_pedigree_metrics_to_db(
+                horse_id=str(horse_id),
+                inbreeding_result=inbreeding,
+                data_snapshot_id=data_snapshot_id,
+            )
+            metrics_rows += 1
+            processed    += 1
+
+            if i % 20 == 0:
+                print(f"  {i}/{len(rows)} 処理済み (祖先行: {ancestor_rows})")
+
+        except Exception as exc:
+            errors.append({"horse_id": str(horse_id), "bamei": bamei, "error": str(exc)[:120]})
+
+    print(f"[pedigree_batch] 完了: {processed}頭 / 祖先行: {ancestor_rows} / 指標行: {metrics_rows} / エラー: {len(errors)}")
+    return {
+        "processed":     processed,
+        "ancestor_rows": ancestor_rows,
+        "metrics_rows":  metrics_rows,
+        "errors":        errors,
+    }
+
+
 if __name__ == "__main__":
     # コマンドライン引数で馬名を指定可能
     import sys
     horse = sys.argv[1] if len(sys.argv) > 1 else "ディープインパクト"
-    results = run_full_pedigree_analysis(year_from=2020,
-                                         target_horse=horse)
+
+    if "--db-batch" in sys.argv:
+        # python pedigree_analysis_17.py --db-batch [--limit N]
+        limit = 200
+        for a in sys.argv:
+            if a.startswith("--limit="):
+                limit = int(a.split("=")[1])
+        run_pedigree_db_batch(limit=limit)
+    else:
+        results = run_full_pedigree_analysis(year_from=2020,
+                                             target_horse=horse)
