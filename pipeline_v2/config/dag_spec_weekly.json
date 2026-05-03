@@ -1,0 +1,38 @@
+{
+  "dag_id": "umanari_weekly",
+  "description": "週次バッチ: モデル再学習 → RAG再構築・UpsetScore更新 → 知識ベース更新 → 監視",
+  "steps": [
+    {
+      "id": "weekly_train",
+      "script": "pipeline_v2/11_weekly_train.py",
+      "description": "週次モデル再学習（TrainAgent + model_registry登録）",
+      "depends_on": []
+    },
+    {
+      "id": "rag_rebuild",
+      "script": "pipeline_v2/10_rag_index.py",
+      "description": "RAGStore インデックス再構築",
+      "depends_on": ["weekly_train"],
+      "args": ["--limit", "50000"]
+    },
+    {
+      "id": "upsetscore",
+      "script": "pipeline_v2/08_upsetscore.py",
+      "description": "UpsetScore 再算出 → race_metrics UPSERT",
+      "depends_on": ["weekly_train"]
+    },
+    {
+      "id": "knowledge_update",
+      "script": "pipeline_v2/12_knowledge_update.py",
+      "description": "知識ベース更新（KnowledgeAgent, days=7）",
+      "depends_on": ["rag_rebuild", "upsetscore"],
+      "args": ["--days", "7"]
+    },
+    {
+      "id": "weekly_monitor",
+      "script": "pipeline_v2/09_monitor.py",
+      "description": "週次監視・OpsAgent ヘルスチェック・auto_stop 判定",
+      "depends_on": ["knowledge_update"]
+    }
+  ]
+}
