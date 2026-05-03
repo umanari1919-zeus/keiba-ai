@@ -28,6 +28,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 from datetime import datetime
+from pipeline.ensemble_utils import load_ensemble_weights
 
 # ── 設定 ──────────────────────────────────────────────────────────────────────
 MODEL_PATH   = "D:/keiba_ai/model_v8.pkl"
@@ -72,8 +73,9 @@ def load_artifacts():
     print(f"[{datetime.now():%H:%M:%S}] モデル読み込み中 ...")
     with open(MODEL_PATH, "rb") as f:
         saved = pickle.load(f)
+    weights = load_ensemble_weights(saved)
     return (saved["lgb_model"], saved["xgb_model"],
-            saved["cb_model"], saved["le"], saved["features"])
+            saved["cb_model"], saved["le"], saved["features"], weights)
 
 
 def load_data(features):
@@ -83,12 +85,12 @@ def load_data(features):
     return df, df[features]
 
 
-def compute_ensemble_probas(lgb_model, xgb_model, cb_model, X):
+def compute_ensemble_probas(lgb_model, xgb_model, cb_model, X, weights):
     """アンサンブル確率から勝率・連対率・複勝率の確率を算出する。"""
     lgb_p = lgb_model.predict_proba(X)
     xgb_p = xgb_model.predict_proba(X)
     cb_p  = cb_model.predict_proba(X)
-    ens   = 0.5 * lgb_p + 0.3 * xgb_p + 0.2 * cb_p
+    ens = weights[0] * lgb_p + weights[1] * xgb_p + weights[2] * cb_p
 
     win_prob     = ens[:, WIN_COL]
     rentan_prob  = ens[:, WIN_COL] + ens[:, RENTAN_COL]
@@ -290,7 +292,7 @@ def plot_shap_hitrate(df_year, win_prob, rentan_prob, fukusho_prob, year, fname)
 
 # ── メイン ────────────────────────────────────────────────────────────────────
 def main():
-    lgb_model, xgb_model, cb_model, le, features = load_artifacts()
+    lgb_model, xgb_model, cb_model, le, features, weights = load_artifacts()
     df, X = load_data(features)
 
     X_sample = sample_background(X, SAMPLE_N)
@@ -349,7 +351,7 @@ def main():
         print(f"  ⚠ {TARGET_YEAR}年の穴馬データが見つかりません。スキップします。")
     else:
         X_target  = target[features]
-        wp, _, _  = compute_ensemble_probas(lgb_model, xgb_model, cb_model, X_target)
+        wp, _, _ = compute_ensemble_probas(lgb_model, xgb_model, cb_model, X_target, weights)
         target["win_prob"] = wp
         top_horses = target.nlargest(WATERFALL_N, "win_prob")
 
@@ -393,7 +395,7 @@ def main():
         print(f"  ⚠ {TARGET_YEAR}年データなし。スキップします。")
     else:
         X_year = df_year[features]
-        wp, rp, fp = compute_ensemble_probas(lgb_model, xgb_model, cb_model, X_year)
+        wp, rp, fp = compute_ensemble_probas(lgb_model, xgb_model, cb_model, X_year, weights)
 
         # 10: 実測ヒット率棒グラフ
         hit_rates = compute_hit_rates(df_year, wp, rp, fp)

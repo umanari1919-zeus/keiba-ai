@@ -1,0 +1,5 @@
+2026-05-03 09:22:04,538 [INFO] === batch_inference ステージ開始 trace=74701be1-08f3-4014-9170-f6a7b026d60f ===
+2026-05-03 09:22:05,945 [INFO] [AUDIT] start agent=batch-inference-agent run_tag=run_20260503_234ab9eb
+2026-05-03 09:22:05,946 [INFO] [DRY-RUN] batch-inference-agent - 実行をスキップ
+2026-05-03 09:22:05,997 [INFO] [AUDIT] success agent=batch-inference-agent run_tag=run_20260503_234ab9eb
+2026-05-03 09:22:05,998 [INFO] batch_inference 完了: candidates=None ev_threshold=None

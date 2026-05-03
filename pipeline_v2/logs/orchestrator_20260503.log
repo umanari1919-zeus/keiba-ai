@@ -1,0 +1,52 @@
+2026-05-03 18:37:03,421 [INFO] ============================================================
+2026-05-03 18:37:03,421 [INFO] うまなり地蔵AI パイプライン起動
+2026-05-03 18:37:03,422 [INFO]   TRACE_ID : e1a8f474-06cf-4cf4-9647-cd6df07681c0
+2026-05-03 18:37:03,422 [INFO]   RUN_TAG  : run_20260503_e1a8f474
+2026-05-03 18:37:03,422 [INFO]   開始時刻 : 2026-05-03T09:37:03.422856+00:00
+2026-05-03 18:37:03,422 [INFO] ============================================================
+2026-05-03 18:37:03,430 [INFO] 実行順序: ['ingest', 'normalize', 'feature_gen', 'rag_index', 'batch_inference', 'explain', 'upsetscore', 'publish', 'trade', 'monitor']
+2026-05-03 18:37:03,966 [INFO] [AUDIT] start agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:07,847 [INFO] [monitor-agent] 正常稼働中
+2026-05-03 18:37:07,888 [INFO] [AUDIT] success agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:07,888 [INFO]   [DRY-RUN] skip: 01_ingest.py
+2026-05-03 18:37:07,930 [INFO] [AUDIT] start agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:07,943 [INFO] [monitor-agent] 正常稼働中
+2026-05-03 18:37:07,982 [INFO] [AUDIT] success agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:07,982 [INFO]   [DRY-RUN] skip: 02_normalize.py
+2026-05-03 18:37:08,025 [INFO] [AUDIT] start agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,036 [INFO] [monitor-agent] 正常稼働中
+2026-05-03 18:37:08,076 [INFO] [AUDIT] success agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,076 [INFO]   [DRY-RUN] skip: 03_feature_gen.py
+2026-05-03 18:37:08,119 [INFO] [AUDIT] start agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,130 [INFO] [monitor-agent] 正常稼働中
+2026-05-03 18:37:08,171 [INFO] [AUDIT] success agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,171 [INFO]   [DRY-RUN] skip: 10_rag_index.py
+2026-05-03 18:37:08,212 [INFO] [AUDIT] start agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,224 [INFO] [monitor-agent] 正常稼働中
+2026-05-03 18:37:08,264 [INFO] [AUDIT] success agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,264 [INFO]   [DRY-RUN] skip: 04_batch_inference.py
+2026-05-03 18:37:08,309 [INFO] [AUDIT] start agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,322 [INFO] [monitor-agent] 正常稼働中
+2026-05-03 18:37:08,363 [INFO] [AUDIT] success agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,363 [INFO]   [DRY-RUN] skip: 05_explain.py
+2026-05-03 18:37:08,409 [INFO] [AUDIT] start agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,420 [INFO] [monitor-agent] 正常稼働中
+2026-05-03 18:37:08,464 [INFO] [AUDIT] success agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,464 [INFO]   [DRY-RUN] skip: 08_upsetscore.py
+2026-05-03 18:37:08,511 [INFO] [AUDIT] start agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,523 [INFO] [monitor-agent] 正常稼働中
+2026-05-03 18:37:08,567 [INFO] [AUDIT] success agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,568 [INFO]   [DRY-RUN] skip: 06_publish.py
+2026-05-03 18:37:08,611 [INFO] [AUDIT] start agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,623 [INFO] [monitor-agent] 正常稼働中
+2026-05-03 18:37:08,667 [INFO] [AUDIT] success agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,668 [INFO]   [DRY-RUN] skip: 07_trade.py
+2026-05-03 18:37:08,713 [INFO] [AUDIT] start agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,726 [INFO] [monitor-agent] 正常稼働中
+2026-05-03 18:37:08,772 [INFO] [AUDIT] success agent=monitor-agent run_tag=run_20260503_e1a8f474
+2026-05-03 18:37:08,772 [INFO]   [DRY-RUN] skip: 09_monitor.py
+2026-05-03 18:37:08,772 [INFO] ============================================================
+2026-05-03 18:37:08,772 [INFO] ✅ 全ステージ正常完了
+2026-05-03 18:37:08,792 [INFO] 終了時刻: 2026-05-03T09:37:08.792140+00:00
+2026-05-03 18:37:08,792 [INFO] ログ: D:\keiba_ai\pipeline_v2\logs\orchestrator_20260503.log
+2026-05-03 18:37:08,792 [INFO] ============================================================

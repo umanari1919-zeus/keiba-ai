@@ -1,0 +1,26 @@
+2026-05-03 09:16:29,946 [WARNING] ev_analysis CSV が見つかりません。空 DataFrame を返します。
+2026-05-03 09:16:29,946 [INFO] 完了: {'races_computed': 0, 'metrics_written': 0, 'top_upsets': []}
+2026-05-03 09:16:59,414 [INFO] EV データ読み込み: D:\keiba_ai\ev_analysis_2026.csv (688 行)
+2026-05-03 09:16:59,415 [WARNING] race_id 列が見つかりません。処理をスキップします。
+2026-05-03 09:16:59,415 [INFO] 完了: {'races_computed': 0, 'metrics_written': 0, 'top_upsets': []}
+2026-05-03 09:17:27,136 [INFO] EV データ読み込み: D:\keiba_ai\ev_analysis_2026.csv (688 行)
+2026-05-03 09:17:27,384 [INFO] レース数: 688 / 指標行数: 3440
+2026-05-03 09:17:27,385 [INFO]   [upset] race_id=2026010406010105 score=0.200 avg_gap=0.0 odds_std=0.0
+2026-05-03 09:17:27,385 [INFO]   [upset] race_id=2026010406010106 score=0.200 avg_gap=0.0 odds_std=0.0
+2026-05-03 09:17:27,385 [INFO]   [upset] race_id=2026010406010107 score=0.200 avg_gap=0.0 odds_std=0.0
+2026-05-03 09:17:27,385 [INFO] [DRY-RUN] DB 書き込みをスキップ (3440 行)
+2026-05-03 09:17:27,387 [INFO] 完了: {'races_computed': 688, 'metrics_written': 0, 'top_upsets': [{'race_id': '2026010406010105', 'avg_gap': 0.0, 'odds_std': 0.0, 'top3_prob': 1.0, 'shock_score': 6.6856, 'upset_score': 0.2}, {'race_id': '2026010406010106', 'avg_gap': 0.0, 'odds_std': 0.0, 'top3_prob': 1.0, 'shock_score': 14.8229, 'upset_score': 0.2}, {'race_id': '2026010406010107', 'avg_gap': 0.0, 'odds_std': 0.0, 'top3_prob': 1.0, 'shock_score': 3.5464, 'upset_score': 0.2}]}
+2026-05-03 09:18:10,338 [INFO] EV データ読み込み: D:\keiba_ai\ev_analysis_2026.csv (688 行)
+2026-05-03 09:18:10,393 [INFO] レース数: 88 / 指標行数: 440
+2026-05-03 09:18:10,393 [INFO]   [upset] race_id=20260228060201 score=0.703 avg_gap=13.0 odds_std=16.0
+2026-05-03 09:18:10,393 [INFO]   [upset] race_id=20260117080106 score=0.694 avg_gap=11.4 odds_std=18.4
+2026-05-03 09:18:10,394 [INFO]   [upset] race_id=20260222050108 score=0.689 avg_gap=13.8 odds_std=13.3
+2026-05-03 09:18:10,394 [INFO] [DRY-RUN] DB 書き込みをスキップ (440 行)
+2026-05-03 09:18:10,395 [INFO] 完了: {'races_computed': 88, 'metrics_written': 0, 'top_upsets': [{'race_id': '20260228060201', 'avg_gap': 12.9875, 'odds_std': 16.0305, 'top3_prob': 0.7674, 'shock_score': 4.9979, 'upset_score': 0.703}, {'race_id': '20260117080106', 'avg_gap': 11.4229, 'odds_std': 18.3506, 'top3_prob': 0.709, 'shock_score': 6.2926, 'upset_score': 0.6941}, {'race_id': '20260222050108', 'avg_gap': 13.79, 'odds_std': 13.3111, 'top3_prob': 0.7597, 'shock_score': 6.3059, 'upset_score': 0.6888}]}
+2026-05-03 09:18:20,971 [INFO] EV データ読み込み: D:\keiba_ai\ev_analysis_2026.csv (688 行)
+2026-05-03 09:18:20,999 [INFO] レース数: 88 / 指標行数: 440
+2026-05-03 09:18:20,999 [INFO]   [upset] race_id=20260228060201 score=0.703 avg_gap=13.0 odds_std=16.0
+2026-05-03 09:18:21,000 [INFO]   [upset] race_id=20260117080106 score=0.694 avg_gap=11.4 odds_std=18.4
+2026-05-03 09:18:21,000 [INFO]   [upset] race_id=20260222050108 score=0.689 avg_gap=13.8 odds_std=13.3
+2026-05-03 09:18:21,000 [INFO] [DRY-RUN] DB 書き込みをスキップ (440 行)
+2026-05-03 09:18:21,000 [INFO] 完了: {'races_computed': 88, 'metrics_written': 0, 'top_upsets': [{'race_id': '20260228060201', 'avg_gap': 12.9875, 'odds_std': 16.0305, 'top3_prob': 0.7674, 'shock_score': 4.9979, 'upset_score': 0.703}, {'race_id': '20260117080106', 'avg_gap': 11.4229, 'odds_std': 18.3506, 'top3_prob': 0.709, 'shock_score': 6.2926, 'upset_score': 0.6941}, {'race_id': '20260222050108', 'avg_gap': 13.79, 'odds_std': 13.3111, 'top3_prob': 0.7597, 'shock_score': 6.3059, 'upset_score': 0.6888}]}

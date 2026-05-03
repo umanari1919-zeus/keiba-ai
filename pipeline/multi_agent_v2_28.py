@@ -48,6 +48,7 @@ from langgraph.types import Send
 # ─────────────────────────────────────────────────────────────
 
 BASE_DIR    = "D:\\keiba_ai"
+DATA_DIR    = f"{BASE_DIR}\\data"
 MODEL_FILE  = f"{BASE_DIR}\\model_v8.pkl"
 FEAT_FILE   = f"{BASE_DIR}\\keiba_data_features.csv"
 RAW_FILE    = f"{BASE_DIR}\\keiba_data.csv"
@@ -582,6 +583,16 @@ def ml_ensemble_agent(state: AgentState) -> AgentState:
         if len(df) == 0:
             return {**state, "ev_candidates": [], "log": log + [f"{tag} {year}年データなし"]}
 
+        # object型列を数値変換（seibetsu_codeなど文字列で入るカラム対策）
+        for col in df.select_dtypes(include='object').columns:
+            if col in features:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+        # 欠損特徴量を0で補完（モデルの期待する列数を保証）
+        for f in features:
+            if f not in df.columns:
+                df[f] = 0
+
         feats = [f for f in features if f in df.columns]
         X = df[feats]
 
@@ -947,12 +958,52 @@ def ev_agent(state: AgentState) -> AgentState:
 
 
 # ─────────────────────────────────────────────────────────────
-# エージェント 6: SupervisorAgent（Claude Sonnet で戦略判断）
+# エージェント 6: SupervisorAgent（Ollama優先 → Claude Sonnet → ルールベース）
 # ─────────────────────────────────────────────────────────────
 
 _SUPERVISOR_SYSTEM = """あなたは競馬予想AIの統括エージェント「うまなり地蔵」です。
 各分析エージェントからの結果を受け取り、最終的な投資戦略を判断します。
 回答は必ず JSON 形式で返してください。"""
+
+
+def _supervisor_via_ollama(summary: str, bankroll: float) -> Optional[Dict]:
+    """
+    Ollama で Supervisor 判断を行う。
+    Returns: {"top_picks": [...], "max_bet_fraction": float,
+              "strategy": str, "confidence_overall": float}
+    失敗時は None。
+    """
+    try:
+        from pipeline.ollama_comment import is_ollama_running, get_model_for_task, _generate
+        if not is_ollama_running():
+            return None
+        # JSON構造出力 → "json" プロファイル（deepseek-r1/phi4 優先）
+        model = get_model_for_task("json")
+        if not model:
+            return None
+
+        user_msg = (
+            "現在資金: " + f"{bankroll:,.0f}" + "円\n"
+            "本日の予想候補（信頼スコア降順）:\n" + summary + "\n\n"
+            "以下をJSON形式で返してください（他の文字は不要）:\n"
+            '{"top_picks": ["馬名1", "馬名2", "馬名3"], '
+            '"max_bet_fraction": 0.15, '
+            '"strategy": "戦略コメント（50文字以内）", '
+            '"confidence_overall": 0.7}'
+        )
+        resp = _generate(user_msg, system=_SUPERVISOR_SYSTEM,
+                         model=model, temperature=0.3, stream=False,
+                         task="json")
+        if not resp:
+            return None
+        import re
+        m = re.search(r"\{.*\}", resp, re.DOTALL)
+        if m:
+            return json.loads(m.group())
+        return None
+    except Exception as e:
+        print("  [Supervisor/Ollama] スキップ: " + str(e))
+        return None
 
 
 def supervisor_agent(state: AgentState) -> AgentState:
@@ -978,48 +1029,49 @@ def supervisor_agent(state: AgentState) -> AgentState:
     summary = "\n".join(summary_lines)
     bankroll = state.get("bankroll", 100_000)
 
-    if _ANTHROPIC_KEY:
-        user_msg = f"""
-現在資金: {bankroll:,.0f}円
-本日の予想候補（信頼スコア降順）:
-{summary}
+    # 優先: Ollama（無料）→ Claude Sonnet（有料）→ ルールベース
+    supervisor_data = _supervisor_via_ollama(summary, bankroll)
+    llm_source = "Ollama"
 
-以下を JSON で返してください:
-{{
-  "top_picks": ["馬名1", "馬名2", "馬名3"],
-  "max_bet_fraction": 0.15,
-  "strategy": "今日の戦略コメント（50文字以内）",
-  "confidence_overall": 0.7
-}}
-"""
+    if supervisor_data is None and _ANTHROPIC_KEY:
+        user_msg = (
+            "現在資金: " + f"{bankroll:,.0f}" + "円\n"
+            "本日の予想候補（信頼スコア降順）:\n" + summary + "\n\n"
+            "以下を JSON で返してください:\n"
+            '{"top_picks": ["馬名1", "馬名2", "馬名3"], '
+            '"max_bet_fraction": 0.15, '
+            '"strategy": "今日の戦略コメント（50文字以内）", '
+            '"confidence_overall": 0.7}'
+        )
         resp = _call_claude(
             system=_SUPERVISOR_SYSTEM, user=user_msg,
-            model="claude-sonnet-4-6", max_tokens=300
+            model="claude-haiku-4-5-20251001", max_tokens=300  # Sonnet→Haiku でコスト削減
         )
         try:
             import re
             json_match = re.search(r"\{.*\}", resp, re.DOTALL)
             if json_match:
                 supervisor_data = json.loads(json_match.group())
-                notes = supervisor_data.get("strategy", "")
-                # Supervisor が推薦した馬のみ上位にソート
-                top_picks = set(supervisor_data.get("top_picks", []))
-                if top_picks:
-                    state["predictions"] = sorted(
-                        preds,
-                        key=lambda x: (x["bamei"] in top_picks, x["confidence"]),
-                        reverse=True
-                    )
-                log.append(f"{tag} Claude 判断完了: {notes}")
-            else:
-                notes = "自動判断"
+                llm_source = "Claude Haiku"
         except Exception:
-            notes = "自動判断（JSON解析失敗）"
+            supervisor_data = None
+
+    notes = "自動判断"
+    if supervisor_data:
+        notes = supervisor_data.get("strategy", "自動判断")
+        top_picks = set(supervisor_data.get("top_picks", []))
+        if top_picks:
+            state["predictions"] = sorted(
+                preds,
+                key=lambda x: (x["bamei"] in top_picks, x["confidence"]),
+                reverse=True
+            )
+        log.append(f"{tag} {llm_source} 判断完了: {notes}")
     else:
-        # API 未設定時: 確信度上位3頭を自動選定
+        # ルールベース: 確信度上位3頭を自動選定
         top3 = [p["bamei"] for p in preds[:3]]
-        notes = f"自動選定: {', '.join(top3)}"
-        log.append(f"{tag} APIキー未設定 → 自動判断")
+        notes = "自動選定: " + ", ".join(top3)
+        log.append(f"{tag} ルールベース判断")
 
     return {**state, "supervisor_notes": notes, "log": log}
 
@@ -1134,13 +1186,30 @@ def risk_agent(state: AgentState) -> AgentState:
 
 
 # ─────────────────────────────────────────────────────────────
-# エージェント 8: CommentaryAgent（Claude Haiku）
+# エージェント 8: CommentaryAgent（Ollama優先 → Claude Haiku → テンプレート）
 # ─────────────────────────────────────────────────────────────
 
 _PERSONA = (
     "あなたは競馬予想AI「うまなり地蔵」です。"
     "閻魔大王の目で穴馬の魅力を簡潔に語ります（60文字以内）。"
 )
+
+
+def _call_ollama_comment(user_msg: str) -> str:
+    """Ollama でX投稿コメントを生成（japanese プロファイル）。失敗時は空文字。"""
+    try:
+        from pipeline.ollama_comment import is_ollama_running, get_model_for_task, _generate
+        if not is_ollama_running():
+            return ""
+        model = get_model_for_task("japanese")
+        if not model:
+            return ""
+        result = _generate(user_msg, system=_PERSONA, model=model,
+                           temperature=0.8, stream=False, task="japanese")
+        return (result or "").strip()
+    except Exception as e:
+        print(f"  [Commentary/Ollama] スキップ: {e}")
+        return ""
 
 
 def commentary_agent(state: AgentState) -> AgentState:
@@ -1170,15 +1239,22 @@ def commentary_agent(state: AgentState) -> AgentState:
         sh_keiken = bet.get("shogai_keiken", 0)
         j_sh_rate = bet.get("jockey_shogai_win_rate", 0.0)
 
-        if _ANTHROPIC_KEY:
-            debut_note  = f" 新馬戦(デビュースコア:{debut_sc:.2f})" if is_debut else ""
-            shogai_note = f" 障害戦(経験{sh_keiken}戦・騎手障害勝率{j_sh_rate:.0%})" if is_shogai else ""
-            user_msg = (
-                f"馬名:{bamei} オッズ:{odds:.1f}倍 EV:{ev:.0f}% "
-                f"確信度:{conf:.0f}% 血統相性:{blood:.2f} "
-                f"調教フォーム:{form} 調教師好調度:{hc:.2f} "
-                f"オッズシグナル:{'SHARP上昇' if sig>0.05 else '通常'}{debut_note}{shogai_note}"
-            )
+        # 共通プロンプト（Ollama / Claude API 両用）
+        debut_note  = f" 新馬戦(デビュースコア:{debut_sc:.2f})" if is_debut else ""
+        shogai_note = (
+            f" 障害戦(経験{sh_keiken}戦・騎手障害勝率{j_sh_rate:.0%})" if is_shogai else ""
+        )
+        user_msg = (
+            f"馬名:{bamei} オッズ:{odds:.1f}倍 EV:{ev:.0f}% "
+            f"確信度:{conf:.0f}% 血統相性:{blood:.2f} "
+            f"調教フォーム:{form} 調教師好調度:{hc:.2f} "
+            f"オッズシグナル:{'SHARP上昇' if sig>0.05 else '通常'}{debut_note}{shogai_note}"
+        )
+
+        # 優先: Ollama（無料・ローカル）→ Claude API（有料）→ テンプレート
+        comment = _call_ollama_comment(user_msg)
+
+        if not comment and _ANTHROPIC_KEY:
             comment = _call_claude(
                 system=_PERSONA, user=user_msg,
                 model="claude-haiku-4-5-20251001", max_tokens=80
@@ -1233,12 +1309,39 @@ def publisher_agent(state: AgentState) -> AgentState:
     if not approved:
         post_text = "🙏 本日は条件を満たすレースがありません。地蔵は待機中です。"
     else:
+        # Ollama で冒頭の一言コメントを生成（失敗時はデフォルト文）
+        _intro = ""
+        try:
+            from pipeline.ollama_comment import is_ollama_running, get_model_for_task, _generate
+            _pub_model = get_model_for_task("japanese") if is_ollama_running() else None
+            if _pub_model:
+                _picks_summary = "、".join(
+                    b["bamei"] + "(" + str(round(b["odds"], 1)) + "倍)"
+                    for b in approved[:3]
+                )
+                _intro_prompt = (
+                    "本日の穴馬予想: " + _picks_summary + "\n"
+                    "うまなり地蔵として、上記の予想について30文字以内で一言コメントしてください。"
+                )
+                _intro_sys = (
+                    "あなたは競馬予想AI「うまなり地蔵」です。"
+                    "閻魔大王・地蔵・業火などの言葉を使い、熱量のある一言を出力してください。"
+                )
+                _intro = _generate(_intro_prompt, system=_intro_sys,
+                                   model=_pub_model, temperature=0.9,
+                                   stream=False, task="japanese") or ""
+        except Exception:
+            pass
+
         lines = [
             f"🙏【うまなり地蔵AI {now.strftime('%m/%d')}】",
             f"💰 本日投入: {risk.get('total_allocated', 0):,.0f}円"
             f" ({risk.get('day_ratio', 0)*100:.1f}%)",
             "",
         ]
+        if _intro:
+            lines.append(f"✨ {_intro.strip()}")
+            lines.append("")
         if notes:
             lines.append(f"📌 {notes}")
             lines.append("")
@@ -1442,99 +1545,62 @@ def run_multi_agent_v2(year: Optional[int] = None) -> AgentState:
         "ev_candidates":    [],
         "predictions":      [],
         "approved_bets":    [],
-        "risk_summary":     {},
         "comments":         {},
-        "post_text":        "",
         "supervisor_notes": "",
-        "errors":           [],
+        "risk_assessment":  {},
         "log":              [],
+        "error":            None,
     }
 
-    # ── フェーズ1: データ取得 ──
-    print("\n  📦 Phase 1: データ取得")
-    state = data_agent(state)
-    if not state["data_ready"]:
-        print("  ⚠️ データ取得失敗 → 中断")
-        return state
 
-    # ── フェーズ2: 並列分析（7エージェント同時） ──
-    print("  🔀 Phase 2: 並列分析（血統×ペース×調教v2×調教師×新馬戦×障害戦×オッズシグナル）")
-    state = _run_parallel_analysis(state)
-    print(f"    blood={len(state['blood_results'])} pace={len(state['pace_results'])} "
-          f"training={len(state['training_results'])} trainer={len(state['trainer_results'])} "
-          f"debut={len(state['debut_results'])} shogai={len(state['shogai_results'])} "
-          f"signals={len(state['odds_signals'])}")
+def run_pipeline(date_str: str = None) -> AgentState:
+    """パイプライン全体を実行する。"""
+    from langgraph.graph import StateGraph, END
+    graph = StateGraph(AgentState)
 
-    # ── フェーズ3: ML アンサンブル ──
-    print("  🤖 Phase 3: ML アンサンブル")
-    state = ml_ensemble_agent(state)
-    print(f"    EV候補: {len(state['ev_candidates'])}R")
+    graph.add_node("data",       data_agent)
+    graph.add_node("blood",      blood_agent)
+    graph.add_node("pace",       pace_agent)
+    graph.add_node("training",   training_agent)
+    graph.add_node("trainer",    trainer_agent)
+    graph.add_node("debut",      debut_agent)
+    graph.add_node("shogai",     shogai_agent)
+    graph.add_node("odds",       odds_signal_agent)
+    graph.add_node("ml",         ml_ensemble_agent)
+    graph.add_node("ev",         ev_agent)
+    graph.add_node("supervisor", supervisor_agent)
+    graph.add_node("risk",       risk_agent)
+    graph.add_node("commentary", commentary_agent)
+    graph.add_node("publisher",  publisher_agent)
 
-    if not state["ev_candidates"]:
-        print("  ⚠️ 候補なし → Publisher へ")
-        state = publisher_agent(state)
-        return state
+    graph.set_entry_point("data")
+    for src, dst in [
+        ("data",       "blood"),
+        ("blood",      "pace"),
+        ("pace",       "training"),
+        ("training",   "trainer"),
+        ("trainer",    "debut"),
+        ("debut",      "shogai"),
+        ("shogai",     "odds"),
+        ("odds",       "ml"),
+        ("ml",         "ev"),
+        ("ev",         "supervisor"),
+        ("supervisor", "risk"),
+        ("risk",       "commentary"),
+        ("commentary", "publisher"),
+        ("publisher",  END),
+    ]:
+        graph.add_edge(src, dst)
 
-    # ── フェーズ4: EV フィルタ ──
-    print("  📊 Phase 4: EV フィルタ")
-    state = ev_agent(state)
-
-    # ── フェーズ5: Supervisor 判断 ──
-    print("  🧠 Phase 5: Supervisor 判断")
-    state = supervisor_agent(state)
-    if state.get("supervisor_notes"):
-        print(f"    判断: {state['supervisor_notes']}")
-
-    # ── フェーズ6: リスク管理 ──
-    print("  🛡️ Phase 6: リスク管理")
-    state = risk_agent(state)
-
-    # ── フェーズ7: コメント生成 ──
-    print("  💬 Phase 7: コメント生成")
-    state = commentary_agent(state)
-
-    # ── フェーズ8: 発信 ──
-    print("  📢 Phase 8: 発信")
-    state = publisher_agent(state)
-
-    # ─────── サマリー ───────
-    elapsed = (datetime.now() - now).seconds
-    rs = state.get("risk_summary", {})
-
-    print(f"\n{'='*60}")
-    print(f"📋 実行ログ")
-    for entry in state.get("log", []):
-        print(f"  {entry}")
-
-    if state.get("errors"):
-        print(f"\n⚠️ エラー ({len(state['errors'])}件)")
-        for e in state["errors"][:5]:
-            print(f"  {e}")
-
-    approved = state.get("approved_bets", [])
-    print(f"\n📊 最終サマリー")
-    print(f"  承認レース   : {rs.get('approved_count', 0)}R")
-    print(f"  総投入予定   : {rs.get('total_allocated', 0):,.0f}円")
-    print(f"  資金消費率   : {rs.get('day_ratio', 0)*100:.1f}%")
-    print(f"  DD乗数       : {rs.get('dd_multiplier', 1.0):.2f}x")
-    print(f"  所要時間     : {elapsed}秒")
-    if approved:
-        top = max(approved, key=lambda x: x["confidence"])
-        print(f"  イチ推し     : {top['bamei']} "
-              f"{top['odds']:.1f}倍 確信度{top['confidence']*100:.0f}%")
-    print(f"{'='*60}")
-
-    return state
-
-
-# ─────────────────────────────────────────────────────────────
-# 旧 API 互換
-# ─────────────────────────────────────────────────────────────
-
-def run_multi_agent(year: Optional[int] = None) -> AgentState:
-    """run_all.py との後方互換"""
-    return run_multi_agent_v2(year)
+    app = graph.compile()
+    return app.invoke(_initial_state(date_str))
 
 
 if __name__ == "__main__":
-    run_multi_agent_v2()
+    import sys
+    date_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    result = run_pipeline(date_arg)
+    approved = result.get("approved_bets", [])
+    print(f"\n承認ベット: {len(approved)}頭")
+    for b in approved:
+        print(f"  {b['bamei']} {b['odds']:.1f}倍  EV={b['expected_value']*100:.0f}%")

@@ -280,7 +280,7 @@ def run_advanced_feature_engineering():
     print("="*55)
 
     df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
-                     encoding="utf-8-sig", low_memory=False)
+                     encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     df = df.fillna(0)
     n_before = len(df.columns)
 

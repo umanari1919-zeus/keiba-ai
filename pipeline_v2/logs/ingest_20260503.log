@@ -1,0 +1,5 @@
+2026-05-03 09:21:57,094 [INFO] === ingest ステージ開始 trace=3a368d0d-b05f-4fc6-a370-1b9b500782f2 ===
+2026-05-03 09:21:57,445 [INFO] [AUDIT] start agent=ingest-agent run_tag=run_20260503_d490ba99
+2026-05-03 09:21:57,445 [INFO] [DRY-RUN] ingest-agent - 実行をスキップ
+2026-05-03 09:21:57,503 [INFO] [AUDIT] success agent=ingest-agent run_tag=run_20260503_d490ba99
+2026-05-03 09:21:57,504 [INFO] ingest 完了: snapshot_id=None

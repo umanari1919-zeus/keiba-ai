@@ -5,14 +5,14 @@ import json
 import psycopg2
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv("D:\\keiba_ai\\.env")
+except ImportError:
+    pass  # python-dotenv 未インストール時は .env を無視
 from datetime import datetime, timedelta
 
-load_dotenv("D:\\keiba_ai\\.env")
-
-BASE = "D:\\keiba_ai"
-DB_CONFIG = dict(host="127.0.0.1", port=5433, dbname="mykeibadb",
-                 user="postgres", password="zeus")
+from pipeline.config import BASE_DIR as BASE, DB_CONFIG
 
 _JYO = {
     '01':'札幌','02':'函館','03':'福島','04':'新潟','05':'東京',

@@ -1,0 +1,5 @@
+2026-05-03 09:22:03,953 [INFO] === feature_gen ステージ開始 trace=02ce4c13-7843-4f53-b3e1-140c488e3562 ===
+2026-05-03 09:22:04,273 [INFO] [AUDIT] start agent=feature-agent run_tag=run_20260503_c8e63370
+2026-05-03 09:22:04,273 [INFO] [DRY-RUN] feature-agent - 実行をスキップ
+2026-05-03 09:22:04,326 [INFO] [AUDIT] success agent=feature-agent run_tag=run_20260503_c8e63370
+2026-05-03 09:22:04,326 [INFO] feature_gen 完了: feature_set_id=None scripts_ok=0/0

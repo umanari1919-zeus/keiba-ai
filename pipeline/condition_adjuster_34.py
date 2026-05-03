@@ -7,15 +7,68 @@
 import numpy as np
 import pandas as pd
 import json, os
+import pickle
 from datetime import datetime
 from typing import Dict, Optional, Tuple
 
 BASE_DIR = "D:\\keiba_ai"
+MODEL_PATH = os.path.join(BASE_DIR, "model_v8.pkl")
 
 # 係数クリップ（安全範囲）
 COEFF_MIN = 0.20
 COEFF_MAX = 2.00
 MIN_SAMPLES = 30   # 係数計算に必要な最低サンプル数
+
+
+def _prepare_model_frame(df: pd.DataFrame, feature_names) -> pd.DataFrame:
+    X = df.copy()
+    for feat in feature_names:
+        if feat not in X.columns:
+            X[feat] = 0
+    X = X[list(feature_names)].copy()
+    for col in X.columns:
+        if not pd.api.types.is_numeric_dtype(X[col]):
+            converted = pd.to_numeric(X[col], errors='coerce')
+            if converted.notna().sum() > 0:
+                X[col] = converted
+            else:
+                X[col] = pd.factorize(X[col].astype(str).fillna(""))[0]
+    return X.fillna(0)
+
+
+def ensure_win_probability(df: pd.DataFrame) -> pd.DataFrame:
+    if 'win_probability' in df.columns and pd.to_numeric(df['win_probability'], errors='coerce').fillna(0).sum() > 0:
+        return df
+    if not os.path.exists(MODEL_PATH):
+        return df
+
+    print("  🔧 既存モデルから win_probability を生成中...")
+    with open(MODEL_PATH, 'rb') as f:
+        saved = pickle.load(f)
+
+    lgb_model = saved['lgb_model']
+    xgb_model = saved['xgb_model']
+    cb_model = saved.get('cb_model')
+    le = saved['le']
+    features = saved['features']
+    weights = saved.get('ensemble_weights', [0.5, 0.3, 0.2])
+    if len(weights) < 3:
+        weights = list(weights) + [0.0] * (3 - len(weights))
+
+    X = _prepare_model_frame(df, features)
+    lgb_p = lgb_model.predict_proba(X)
+    xgb_p = xgb_model.predict_proba(X)
+    if cb_model is not None:
+        cb_p = cb_model.predict_proba(X)
+        ensemble_p = weights[0] * lgb_p + weights[1] * xgb_p + weights[2] * cb_p
+    else:
+        ensemble_p = weights[0] * lgb_p + weights[1] * xgb_p
+
+    classes = list(le.classes_)
+    win_idx = classes.index(1) if 1 in classes else 0
+    out = df.copy()
+    out['win_probability'] = ensemble_p[:, win_idx]
+    return out
 
 
 # ─────────────────────────────────────────────────────────────
@@ -206,6 +259,9 @@ def run_condition_adjuster(year: int = None) -> dict:
 
     df = pd.read_csv(feat_path, encoding='utf-8-sig', low_memory=False, on_bad_lines='skip')
     print(f"  📊 全データ: {len(df):,}件")
+    df = ensure_win_probability(df)
+    if 'win_probability' in df.columns:
+        df.to_csv(feat_path, index=False, encoding='utf-8-sig')
 
     roi_table = build_roi_table(df)
 

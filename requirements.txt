@@ -1,0 +1,46 @@
+# うまなり地蔵AI — 依存パッケージ
+# pip install -r requirements.txt
+
+# ── コア（必須） ──────────────────────────────────────
+psycopg2-binary>=2.9
+sqlalchemy>=2.0
+pandas>=2.0
+numpy>=1.26
+pyarrow>=14.0
+
+# ── 機械学習 ──────────────────────────────────────────
+lightgbm>=4.0
+xgboost>=2.0
+catboost>=1.2
+scikit-learn>=1.3
+optuna>=3.0
+shap>=0.44
+
+# ── Web・スクレイピング ───────────────────────────────
+httpx>=0.24
+beautifulsoup4>=4.12
+requests>=2.31
+lxml>=5.0
+playwright>=1.40       # playwright install chromium も必要
+
+# ── 可視化・統計 ──────────────────────────────────────
+matplotlib>=3.7
+plotly>=5.0
+scipy>=1.11
+tqdm>=4.66
+
+# ── ユーティリティ ────────────────────────────────────
+python-dotenv>=1.0
+schedule>=1.2
+
+# ── ダッシュボード ────────────────────────────────────
+streamlit>=1.30
+
+# ── LLM・AI API ──────────────────────────────────────
+anthropic>=0.25        # Claude Haiku コメント生成
+# ollama               # pip install ollama  (ローカルLLM)
+
+# ── 高度機能（オプション） ────────────────────────────
+# langgraph>=0.1       # マルチエージェント
+# stable-baselines3    # 強化学習ベットサイジング
+# torch                # NN スタッキング

@@ -1,0 +1,37 @@
+[
+  {
+    "path": "D:\\keiba_ai\\model_v3.pkl",
+    "size": 43668051,
+    "header_bytes": "800495eb"
+  },
+  {
+    "path": "D:\\keiba_ai\\model_v4.pkl",
+    "size": 42658778,
+    "header_bytes": "800495eb"
+  },
+  {
+    "path": "D:\\keiba_ai\\model_v5.pkl",
+    "size": 44821601,
+    "header_bytes": "800495eb"
+  },
+  {
+    "path": "D:\\keiba_ai\\model_v6.pkl",
+    "size": 41300260,
+    "header_bytes": "800495eb"
+  },
+  {
+    "path": "D:\\keiba_ai\\model_v7.pkl",
+    "size": 88801407,
+    "header_bytes": "800495ef"
+  },
+  {
+    "path": "D:\\keiba_ai\\archive\\model_v2.pkl",
+    "size": 7668075204,
+    "header_bytes": "800495d4"
+  },
+  {
+    "path": "D:\\keiba_ai\\archive\\model_v8.pkl",
+    "size": 479365200,
+    "header_bytes": "800595fb"
+  }
+]

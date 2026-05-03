@@ -1,0 +1,25 @@
+{
+  "prompt_id": "p_explain_v1",
+  "prompt_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "model_name": "local-llm",
+  "model_version": "2.5",
+  "instructions": "Produce a factual, concise JSON explanation. Include model_version, featureset, prompt_hash, data_snapshot_id in evidence_links. If confidence < 0.8 or uncertainty > 0.4, set 'requires_human_review': true. Ensure output JSON is valid and contains all required fields.",
+  "required_fields": [
+    "entry_id",
+    "race_id",
+    "prediction",
+    "top_features",
+    "explanation_short",
+    "explanation_long",
+    "bet_recommendation",
+    "uncertainty",
+    "confidence",
+    "evidence_links",
+    "prompt_id",
+    "prompt_hash",
+    "model_name",
+    "model_version",
+    "run_tag",
+    "created_at"
+  ]
+}

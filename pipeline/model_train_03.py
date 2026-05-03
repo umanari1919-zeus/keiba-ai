@@ -1,13 +1,17 @@
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
-from sklearn.preprocessing import LabelEncoder
-import lightgbm as lgb
-import xgboost as xgb
-import catboost as cb
 import pickle
 from datetime import datetime
+
+try:
+    import catboost as cb
+except ImportError:
+    cb = None
+import lightgbm as lgb
+import numpy as np
+import pandas as pd
+import xgboost as xgb
+from sklearn.metrics import accuracy_score, log_loss
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 
 FEATURES = [
     'barei', 'seibetsu_code', 'kishu_code', 'chokyoshi_code',
@@ -56,99 +60,386 @@ FEATURES = [
     'age_from_peak', 'is_peak_age', 'before_peak', 'past_peak', 'age_experience',
 ]
 
+
+LEAKY_OR_RAW_COLUMNS = {
+    "kakutei_chakujun",
+    "tansho_odds",
+    "tansho_ninkijun",
+    "bamei",
+    "kishumei_ryakusho",
+    "chichi",
+    "haha",
+    "chichi_chichi",
+    "haha_chichi",
+    "race_date",
+    "prev_race_date",
+    "race_code",
+    "ketto_toroku_bango",
+    "kaisai_gappi",
+    "win_probability",
+    "expected_value",
+    "odds_decimal",
+    "pred_chakujun",
+    "hit",
+    "ev",
+    "pred_rank",
+    "bankroll_after",
+}
+
+
+def _to_numeric_frame(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    X = df[cols].copy()
+    for col in X.columns:
+        if not pd.api.types.is_numeric_dtype(X[col]):
+            converted = pd.to_numeric(X[col], errors="coerce")
+            if converted.notna().sum() > 0:
+                X[col] = converted
+            else:
+                X[col] = pd.factorize(X[col].astype(str).fillna(""))[0]
+    return X.fillna(0)
+
+
+def _detect_features(df: pd.DataFrame) -> list[str]:
+    base = [f for f in FEATURES if f in df.columns]
+    extra = []
+    for c in df.columns:
+        if c in base or c in LEAKY_OR_RAW_COLUMNS:
+            continue
+        if df[c].dtype == "object":
+            continue
+        if c.endswith("_date"):
+            continue
+        extra.append(c)
+    features = base + sorted(extra)
+    return [f for f in features if f in df.columns]
+
+
+def _build_time_group_split(df: pd.DataFrame):
+    split_col = None
+    if "race_date" in df.columns:
+        dt = pd.to_datetime(df["race_date"], errors="coerce")
+        if dt.notna().sum() > 1000:
+            df = df.copy()
+            df["_split_date"] = dt
+            split_col = "_split_date"
+    if split_col is None and "kaisai_gappi" in df.columns:
+        dt = pd.to_datetime(df["kaisai_gappi"].astype(str), format="%Y%m%d", errors="coerce")
+        if dt.notna().sum() > 1000:
+            df = df.copy()
+            df["_split_date"] = dt
+            split_col = "_split_date"
+
+    if split_col is None or "race_code" not in df.columns:
+        return None
+
+    races = (
+        df[["race_code", split_col]]
+        .dropna(subset=[split_col])
+        .drop_duplicates(subset=["race_code"])
+        .sort_values(split_col)
+        .reset_index(drop=True)
+    )
+    if len(races) < 100:
+        return None
+
+    n = len(races)
+    n_test = max(1, int(n * 0.2))
+    n_val = max(1, int(n * 0.2))
+    test_codes = set(races.iloc[-n_test:]["race_code"])
+    val_codes = set(races.iloc[-(n_test + n_val):-n_test]["race_code"])
+    train_codes = set(races.iloc[:-(n_test + n_val)]["race_code"])
+    if not train_codes or not val_codes or not test_codes:
+        return None
+
+    idx_train = df[df["race_code"].isin(train_codes)].index
+    idx_val = df[df["race_code"].isin(val_codes)].index
+    idx_test = df[df["race_code"].isin(test_codes)].index
+    if len(idx_train) == 0 or len(idx_val) == 0 or len(idx_test) == 0:
+        return None
+    return idx_train, idx_val, idx_test
+
+
+def _safe_random_split(X, y_encoded):
+    y_series = pd.Series(y_encoded, index=X.index)
+    counts = y_series.value_counts().sort_index()
+    rare_labels = counts[counts < 2].index.tolist()
+    rare_mask = y_series.isin(rare_labels)
+
+    X_rare = X.loc[rare_mask]
+    y_rare = y_series.loc[rare_mask]
+    X_rem = X.loc[~rare_mask]
+    y_rem = y_series.loc[~rare_mask]
+
+    if len(X_rem) == 0:
+        return X_rare.copy(), X_rare.iloc[:0].copy(), X_rare.iloc[:0].copy(), y_rare.to_numpy(), y_rare.iloc[:0].to_numpy(), y_rare.iloc[:0].to_numpy()
+
+    try:
+        X_train_full, X_test, y_train_full, y_test = train_test_split(
+            X_rem, y_rem, test_size=0.2, random_state=42, stratify=y_rem
+        )
+    except ValueError:
+        X_train_full, X_test, y_train_full, y_test = train_test_split(
+            X_rem, y_rem, test_size=0.2, random_state=42
+        )
+    try:
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_train_full, y_train_full, test_size=0.2, random_state=42, stratify=y_train_full
+        )
+    except ValueError:
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_train_full, y_train_full, test_size=0.2, random_state=42
+        )
+
+    if len(X_rare) > 0:
+        X_train = pd.concat([X_train, X_rare], axis=0)
+        y_train = pd.concat([pd.Series(y_train, index=X_train.index[:len(y_train)]), y_rare], axis=0)
+        # y_train 上の index を X_train と合わせ直す
+        y_train = pd.Series(y_train.to_numpy(), index=X_train.index)
+
+    all_classes = set(counts.index.tolist())
+    train_classes = set(pd.Series(y_train).unique().tolist())
+    missing = sorted(all_classes - train_classes)
+    if missing:
+        for label in missing:
+            pick = None
+            for frame_x, frame_y in ((X_val, y_val), (X_test, y_test)):
+                idx = np.where(np.asarray(frame_y) == label)[0]
+                if len(idx):
+                    pick = int(idx[0])
+                    if frame_x is X_val:
+                        X_train = pd.concat([X_train, frame_x.iloc[[pick]]], axis=0)
+                        y_train = pd.concat([pd.Series(y_train), pd.Series([label], index=frame_x.iloc[[pick]].index)], axis=0)
+                        X_val = frame_x.drop(frame_x.index[pick])
+                        y_val = np.delete(np.asarray(frame_y), pick)
+                    else:
+                        X_train = pd.concat([X_train, frame_x.iloc[[pick]]], axis=0)
+                        y_train = pd.concat([pd.Series(y_train), pd.Series([label], index=frame_x.iloc[[pick]].index)], axis=0)
+                        X_test = frame_x.drop(frame_x.index[pick])
+                        y_test = np.delete(np.asarray(frame_y), pick)
+                    break
+    y_train = pd.Series(np.asarray(y_train), index=X_train.index)
+    return X_train, X_val, X_test, np.asarray(y_train), np.asarray(y_val), np.asarray(y_test)
+
+
+def _optimize_ensemble_weights(lgb_p, xgb_p, cb_p, y_true):
+    candidates = np.arange(0.05, 0.96, 0.05)
+    best = None
+    best_score = float("inf")
+    best_acc = -1.0
+    if cb_p is None:
+        for w1 in candidates:
+            w2 = 1.0 - w1
+            if w2 < 0.05:
+                continue
+            p = w1 * lgb_p + w2 * xgb_p
+            score = log_loss(y_true, p, labels=list(range(p.shape[1])))
+            acc = accuracy_score(y_true, p.argmax(axis=1))
+            if score < best_score or (np.isclose(score, best_score) and acc > best_acc):
+                best_score = score
+                best_acc = acc
+                best = [float(w1), float(w2), 0.0]
+        return best or [0.5, 0.5, 0.0], best_score, best_acc
+
+    for w1 in candidates:
+        for w2 in candidates:
+            w3 = 1.0 - w1 - w2
+            if w3 < 0.05:
+                continue
+            p = w1 * lgb_p + w2 * xgb_p + w3 * cb_p
+            score = log_loss(y_true, p, labels=list(range(p.shape[1])))
+            acc = accuracy_score(y_true, p.argmax(axis=1))
+            if score < best_score or (np.isclose(score, best_score) and acc > best_acc):
+                best_score = score
+                best_acc = acc
+                best = [float(w1), float(w2), float(w3)]
+    return best or [0.5, 0.3, 0.2], best_score, best_acc
+
+
 def train_model():
-    print(f"🤖 [{datetime.now()}] データリーケージ修正版 学習開始...")
-    print("⚠️ オッズ・人気を除外した真の予測モデル")
-    
+    print(f"🤖 [{datetime.now()}] 世界最強版 学習開始...")
+    print("⚠️ オッズ・人気は除外、時系列で学習/検証/評価")
+
     df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
-                     encoding="utf-8-sig", low_memory=False)
+                     encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     df = df.fillna(0)
-    
-    features = [f for f in FEATURES if f in df.columns]
+
+    if "kakutei_chakujun" not in df.columns:
+        raise ValueError("kakutei_chakujun 列が見つかりません")
+
+    y_raw = pd.to_numeric(df["kakutei_chakujun"], errors="coerce")
+    df = df[y_raw.notna()].copy()
+    y = y_raw[y_raw.notna()].astype(int)
+    df["kakutei_chakujun"] = y
+
+    if len(df) > 8_000:
+        print("⚡ 学習高速化: クラスごと上限付きサンプリングを適用")
+        cap_per_class = 300
+        sampled_idx = []
+        for cls, grp in df.groupby("kakutei_chakujun", sort=False):
+            if len(grp) > cap_per_class:
+                grp = grp.sample(n=cap_per_class, random_state=42)
+            sampled_idx.extend(grp.index.tolist())
+        df = df.loc[sorted(sampled_idx)].copy().reset_index(drop=True)
+        y = pd.to_numeric(df["kakutei_chakujun"], errors="coerce").astype(int)
+        print(f"   サンプル後: {len(df):,}件")
+
+    features = _detect_features(df)
     print(f"📋 使用特徴量数：{len(features)}個")
-    
-    X = df[features]
-    y = df['kakutei_chakujun']
-    
+
+    X = _to_numeric_frame(df, features)
+
     le = LabelEncoder()
     y_encoded = le.fit_transform(y)
-    
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
-    X_train_enc, X_test_enc, y_train_enc, y_test_enc = train_test_split(
-        X, y_encoded, test_size=0.2, random_state=42
-    )
-    
-    print(f"📊 学習データ：{len(X_train):,}件")
-    print(f"📊 テストデータ：{len(X_test):,}件")
+
+    split_idx = _build_time_group_split(df)
+    if split_idx:
+        idx_train, idx_val, idx_test = split_idx
+        X_train, X_val, X_test = X.loc[idx_train], X.loc[idx_val], X.loc[idx_test]
+        y_train, y_val, y_test = y_encoded[idx_train], y_encoded[idx_val], y_encoded[idx_test]
+        print("🕒 時系列レース分割を適用")
+    else:
+        X_train, X_val, X_test, y_train, y_val, y_test = _safe_random_split(X, y_encoded)
+        print("🧪 ランダム分割を適用（時系列列不足）")
+
+    all_classes = set(np.unique(y_encoded).tolist())
+    train_classes = set(np.unique(y_train).tolist())
+    if train_classes != all_classes:
+        missing = sorted(all_classes - train_classes)
+        print(f"⚠️ train に未出現クラスあり → ランダム分割へ切替 ({missing[:5]}{'...' if len(missing) > 5 else ''})")
+        X_train, X_val, X_test, y_train, y_val, y_test = _safe_random_split(X, y_encoded)
+
+    print(f"📊 Train: {len(X_train):,}件")
+    print(f"📊 Valid: {len(X_val):,}件")
+    print(f"📊 Test : {len(X_test):,}件")
+
+    cb_available = cb is not None
+    if not cb_available:
+        print("\n⚠️ CatBoost が未インストールのため、LGBM + XGBoost の2モデルで学習します")
 
     # ① LightGBM
-    print("\n🔍 LightGBM学習中...")
+    print("\n🔍 LightGBM 学習中...")
     lgb_model = lgb.LGBMClassifier(
-        n_estimators=423,
-        learning_rate=0.011269932671424674,
-        num_leaves=69,
-        min_child_samples=49,
+        n_estimators=150,
+        learning_rate=0.03,
+        num_leaves=63,
+        min_child_samples=30,
+        subsample=0.85,
+        colsample_bytree=0.8,
         random_state=42,
         n_jobs=-1,
-        verbose=-1
+        objective="multiclass",
+        verbose=-1,
     )
-    lgb_model.fit(X_train, y_train)
-    lgb_acc = accuracy_score(y_test, lgb_model.predict(X_test))
-    print(f"🎯 LightGBM正解率：{lgb_acc:.2%}")
+    lgb_model.fit(
+        X_train,
+        y_train,
+        eval_set=[(X_val, y_val)],
+        eval_metric="multi_logloss",
+        callbacks=[lgb.early_stopping(100, verbose=False)],
+    )
+    lgb_pred = lgb_model.predict(X_test)
+    lgb_acc = accuracy_score(y_test, lgb_pred)
+    print(f"🎯 LightGBM 正解率: {lgb_acc:.2%}")
 
     # ② XGBoost
-    print("\n🔍 XGBoost学習中...")
+    print("\n🔍 XGBoost 学習中...")
     xgb_model = xgb.XGBClassifier(
-        n_estimators=300,
-        learning_rate=0.05,
-        max_depth=6,
+        n_estimators=150,
+        learning_rate=0.03,
+        max_depth=7,
+        min_child_weight=2,
+        subsample=0.85,
+        colsample_bytree=0.8,
         random_state=42,
         n_jobs=-1,
         verbosity=0,
-        eval_metric='mlogloss'
+        eval_metric="mlogloss",
+        objective="multi:softprob",
+        tree_method="hist",
     )
-    xgb_model.fit(X_train_enc, y_train_enc)
-    xgb_pred = le.inverse_transform(xgb_model.predict(X_test_enc))
+    xgb_model.fit(
+        X_train,
+        y_train,
+        eval_set=[(X_val, y_val)],
+        verbose=False,
+    )
+    xgb_pred = xgb_model.predict(X_test)
     xgb_acc = accuracy_score(y_test, xgb_pred)
-    print(f"🎯 XGBoost正解率：{xgb_acc:.2%}")
+    print(f"🎯 XGBoost 正解率: {xgb_acc:.2%}")
 
     # ③ CatBoost
-    print("\n🔍 CatBoost学習中...")
-    cb_model = cb.CatBoostClassifier(
-        iterations=300,
-        learning_rate=0.05,
-        depth=6,
-        random_seed=42,
-        verbose=0
-    )
-    cb_model.fit(X_train, y_train)
-    cb_acc = accuracy_score(y_test, cb_model.predict(X_test))
-    print(f"🎯 CatBoost正解率：{cb_acc:.2%}")
+    if cb_available:
+        print("\n🔍 CatBoost 学習中...")
+        cb_model = cb.CatBoostClassifier(
+            iterations=150,
+            learning_rate=0.03,
+            depth=7,
+            random_seed=42,
+            loss_function="MultiClass",
+            eval_metric="MultiClass",
+            verbose=0,
+        )
+        cb_model.fit(
+            X_train,
+            y_train,
+            eval_set=(X_val, y_val),
+            use_best_model=True,
+        )
+        cb_pred = cb_model.predict(X_test).ravel()
+        cb_pred = np.array(cb_pred, dtype=int)
+        cb_acc = accuracy_score(y_test, cb_pred)
+        print(f"🎯 CatBoost 正解率: {cb_acc:.2%}")
+    else:
+        cb_model = None
+        cb_acc = float("nan")
 
-    # ④ 加重アンサンブル（LightGBM重視）
-    print("\n🔀 加重アンサンブル予測中...")
-    lgb_proba = lgb_model.predict_proba(X_test)
-    xgb_proba = xgb_model.predict_proba(X_test_enc)
-    cb_proba = cb_model.predict_proba(X_test)
-
-    # LightGBM:0.5 XGBoost:0.3 CatBoost:0.2
-    ensemble_proba = (
-        0.5 * lgb_proba +
-        0.3 * xgb_proba +
-        0.2 * cb_proba
+    # ④ 検証データで重み最適化
+    print("\n⚖️ アンサンブル重み最適化中...")
+    lgb_val_p = lgb_model.predict_proba(X_val)
+    xgb_val_p = xgb_model.predict_proba(X_val)
+    cb_val_p = cb_model.predict_proba(X_val) if cb_available else None
+    weights, val_logloss, val_acc = _optimize_ensemble_weights(
+        lgb_val_p, xgb_val_p, cb_val_p, y_val
     )
-    ensemble_pred = le.inverse_transform(ensemble_proba.argmax(axis=1))
+    if cb_available:
+        print(
+            f"   最適重み: LGB={weights[0]:.2f} XGB={weights[1]:.2f} CB={weights[2]:.2f} "
+            f"(valid acc={val_acc:.2%}, logloss={val_logloss:.5f})"
+        )
+    else:
+        print(
+            f"   最適重み: LGB={weights[0]:.2f} XGB={weights[1]:.2f} "
+            f"(valid acc={val_acc:.2%}, logloss={val_logloss:.5f})"
+        )
+
+    # ⑤ テストデータ評価
+    print("\n🔀 テスト評価...")
+    lgb_test_p = lgb_model.predict_proba(X_test)
+    xgb_test_p = xgb_model.predict_proba(X_test)
+    if cb_available:
+        cb_test_p = cb_model.predict_proba(X_test)
+        ensemble_proba = (
+            weights[0] * lgb_test_p
+            + weights[1] * xgb_test_p
+            + weights[2] * cb_test_p
+        )
+    else:
+        ensemble_proba = (
+            weights[0] * lgb_test_p
+            + weights[1] * xgb_test_p
+        )
+    ensemble_pred = ensemble_proba.argmax(axis=1)
     ensemble_acc = accuracy_score(y_test, ensemble_pred)
+    ensemble_logloss = log_loss(y_test, ensemble_proba, labels=list(range(ensemble_proba.shape[1])))
 
     print(f"\n{'='*40}")
-    print(f"📊 モデル比較（オッズ・人気除外版）")
+    print("📊 モデル比較（テスト）")
     print(f"{'='*40}")
     print(f"LightGBM : {lgb_acc:.2%}")
     print(f"XGBoost  : {xgb_acc:.2%}")
-    print(f"CatBoost : {cb_acc:.2%}")
-    print(f"Ensemble : {ensemble_acc:.2%}")
+    if cb_available:
+        print(f"CatBoost : {cb_acc:.2%}")
+    print(f"Ensemble : {ensemble_acc:.2%} (logloss={ensemble_logloss:.5f})")
     print(f"{'='*40}")
 
     with open("D:\\keiba_ai\\model_v8.pkl", "wb") as f:
@@ -157,10 +448,21 @@ def train_model():
             'xgb_model': xgb_model,
             'cb_model': cb_model,
             'le': le,
-            'features': features
+            'features': features,
+            'ensemble_weights': weights,
+            'metrics': {
+                'lgb_acc': float(lgb_acc),
+                'xgb_acc': float(xgb_acc),
+                'cb_acc': float(cb_acc) if cb_available else None,
+                'ensemble_acc': float(ensemble_acc),
+                'ensemble_logloss': float(ensemble_logloss),
+                'val_acc': float(val_acc),
+                'val_logloss': float(val_logloss),
+                'trained_at': datetime.now().isoformat(timespec='seconds'),
+            }
         }, f)
-    
-    print("\n💾 model_v8.pkl に保存しました！")
+
+    print("\n💾 model_v8.pkl に保存しました（最適重み込み）")
     return lgb_model, xgb_model, cb_model, features
 
 if __name__ == "__main__":

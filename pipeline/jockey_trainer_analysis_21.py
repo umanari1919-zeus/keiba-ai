@@ -138,7 +138,7 @@ def run_jockey_trainer_analysis():
     print("="*55)
 
     df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
-                     encoding="utf-8-sig", low_memory=False)
+                     encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     n_before = len(df.columns)
 
     print("  🏇 騎手×調教師コンボ...")

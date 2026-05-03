@@ -120,7 +120,7 @@ def horse_type_clustering(df: pd.DataFrame, n_clusters=8) -> pd.DataFrame:
         'cluster_win_rate':   (g['kakutei_chakujun'] == 1).mean(),
         'cluster_avg_odds':   g['tansho_odds'].mean() / 10,
         'cluster_size':       len(g)
-    }))
+    }), include_groups=False)
     print(f"  🏇 馬タイプ分類: {best_k}クラスタ (silhouette={best_score:.3f})")
     for idx, row in cluster_stats.iterrows():
         print(f"    Cluster {idx}: 勝率{row['cluster_win_rate']*100:.1f}% "
@@ -261,7 +261,7 @@ def run_statistical_analysis():
     print("="*55)
 
     df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
-                     encoding="utf-8-sig", low_memory=False)
+                     encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
 
     with open(MODEL_FILE, 'rb') as f:
         saved = pickle.load(f)

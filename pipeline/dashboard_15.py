@@ -27,6 +27,7 @@ except ImportError:
 # ── 定数 ────────────────────────────────────────────────────
 BASE = "D:\\keiba_ai"
 YEAR = datetime.now().year
+DATA_DIR = os.path.join(BASE, "data")
 
 # ── レースコード → 人間向け表示 ─────────────────────────────
 _JYO = {
@@ -75,29 +76,99 @@ def fmt_race(code: str) -> str:
 # ── CSS ────────────────────────────────────────────────────
 st.markdown("""
 <style>
+/* ─ Theme tokens ─ */
+:root {
+    --bg: #0b1020;
+    --panel: #111827;
+    --panel-2: #131d2f;
+    --line: #263247;
+    --text: #e5eefc;
+    --muted: #8da2c0;
+    --accent: #77a7ff;
+    --accent-2: #8ce6c9;
+    --warm: #f3c96b;
+    --hot: #ff8a6b;
+}
+
 /* ─ グローバル ─ */
-[data-testid="stAppViewContainer"] { background: #0d1117; }
-[data-testid="stSidebar"] { background: #161b22; border-right: 1px solid #30363d; }
-h1,h2,h3 { color: #e6edf3 !important; }
-p, li, span { color: #c9d1d9; }
+[data-testid="stAppViewContainer"] {
+    background:
+        radial-gradient(circle at top left, rgba(119,167,255,0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(140,230,201,0.10), transparent 26%),
+        linear-gradient(180deg, #08101f 0%, #0b1020 42%, #09111d 100%);
+}
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0f1728 0%, #101a2d 100%);
+    border-right: 1px solid var(--line);
+}
+h1,h2,h3 { color: var(--text) !important; }
+p, li, span, label, div { color: var(--text); }
+
+/* ─ Hero ─ */
+.hero {
+    background: linear-gradient(135deg, rgba(17,24,39,.98), rgba(15,23,42,.92));
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 18px 20px;
+    margin: 6px 0 16px;
+    box-shadow: 0 14px 40px rgba(0,0,0,.22);
+}
+.hero-top {
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:16px;
+    flex-wrap:wrap;
+}
+.hero-title {
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: 0;
+    color: var(--text);
+}
+.hero-sub {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: .92rem;
+}
+.hero-meta {
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+}
+.pill {
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding: 7px 11px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.08);
+    font-size: .82rem;
+    color: var(--text);
+}
+.pill.accent { border-color: rgba(119,167,255,.28); background: rgba(119,167,255,.10); }
+.pill.green  { border-color: rgba(140,230,201,.28); background: rgba(140,230,201,.10); }
+.pill.warm   { border-color: rgba(243,201,107,.28); background: rgba(243,201,107,.10); }
 
 /* ─ KPI カード ─ */
 .kpi {
-    background: linear-gradient(145deg,#161b22,#1c2128);
-    border: 1px solid #30363d;
-    border-radius: 14px;
+    background: linear-gradient(145deg, rgba(17,24,39,.98), rgba(21,29,44,.96));
+    border: 1px solid var(--line);
+    border-radius: 12px;
     padding: 20px 16px;
     text-align: center;
     transition: transform .2s;
 }
-.kpi:hover { transform: translateY(-2px); border-color:#58a6ff; }
+.kpi:hover { transform: translateY(-2px); border-color: var(--accent); }
 .kpi-val  { font-size: 2.2rem; font-weight: 700; line-height: 1.1; }
-.kpi-sub  { font-size: 0.78rem; color: #8b949e; margin-top: 4px; }
+.kpi-sub  { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
 .kpi-delta{ font-size: 0.85rem; margin-top: 6px; }
 
 /* ─ ベットカード ─ */
 .bet-card {
-    background: #161b22;
+    background: linear-gradient(145deg, rgba(17,24,39,.98), rgba(18,28,44,.96));
     border-left: 4px solid #1f6feb;
     border-radius: 10px;
     padding: 14px 18px;
@@ -121,12 +192,12 @@ p, li, span { color: #c9d1d9; }
 
 /* ─ セクションヘッダ ─ */
 .sec-head {
-    border-bottom: 1px solid #30363d;
+    border-bottom: 1px solid var(--line);
     padding-bottom: 6px;
     margin: 20px 0 14px;
     font-size: 1rem;
     font-weight: 700;
-    color: #58a6ff;
+    color: var(--accent);
 }
 
 /* ─ アラートボックス ─ */
@@ -136,6 +207,39 @@ p, li, span { color: #c9d1d9; }
 
 /* ─ タブ ─ */
 button[data-baseweb="tab"] { font-size:.9rem !important; }
+
+/* ─ Live monitor ─ */
+.live-shell {
+    background: linear-gradient(180deg, rgba(17,24,39,.96), rgba(12,18,31,.96));
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 16px;
+}
+.live-grid {
+    display:grid;
+    grid-template-columns: 1.35fr .95fr;
+    gap: 14px;
+}
+.live-list {
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+}
+.race-line {
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    align-items:center;
+    padding: 11px 12px;
+    border-radius: 10px;
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.06);
+}
+.race-line strong { color: var(--text); }
+.race-line small { color: var(--muted); }
+.trend-up { color: #ff8a6b; }
+.trend-down { color: #8ce6c9; }
+.trend-stable { color: #8da2c0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -185,6 +289,14 @@ def load_ticket_recs():
     return pd.DataFrame(d) if d else pd.DataFrame()
 
 @st.cache_data(ttl=300)
+def load_ticket_recs_summary():
+    path = os.path.join(BASE, "data", f"ticket_recommendations_{YEAR}.md")
+    if not os.path.exists(path):
+        return ""
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+@st.cache_data(ttl=300)
 def load_walkforward():
     return _jload(os.path.join(BASE,"data","walkforward_result.json"))
 
@@ -223,7 +335,345 @@ def load_nicks_all():
 
 def _plotly_theme():
     return dict(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                font_color='#c9d1d9', margin=dict(l=8,r=8,t=36,b=8))
+                font_color='#e5eefc', margin=dict(l=8,r=8,t=36,b=8),
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1))
+
+
+def _latest_file(pattern: str):
+    files = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+    return files[0] if files else None
+
+
+@st.cache_data(ttl=120)
+def load_odds_config():
+    return _jload(os.path.join(BASE, "data", "odds_monitor_config.json")) or {}
+
+
+@st.cache_data(ttl=60)
+def load_odds_snapshots(limit: int = 8):
+    files = sorted(
+        glob.glob(os.path.join(BASE, "data", "odds_snapshot_*.json")),
+        key=os.path.getmtime,
+        reverse=True,
+    )[:limit]
+    snaps = []
+    for f in files:
+        data = _jload(f)
+        if data:
+            snaps.append({"file": f, "data": data})
+    return snaps
+
+
+def _flatten_snapshot_payload(payload):
+    rows = []
+    for race in payload:
+        race_id = str(race.get("race_id", ""))
+        ts = race.get("timestamp")
+        title = race.get("title", "")
+        horses = race.get("horses", {}) or {}
+        for name, odds in horses.items():
+            rows.append({
+                "race_id": race_id,
+                "title": title,
+                "timestamp": ts,
+                "bamei": name,
+                "tansho": float(odds.get("tansho", 0) or 0),
+                "fukusho_min": float(odds.get("fukusho_min", 0) or 0),
+                "fukusho_max": float(odds.get("fukusho_max", 0) or 0),
+                "ninki": int(odds.get("ninki", 0) or 0),
+                "umaban": int(odds.get("umaban", 0) or 0),
+            })
+    return pd.DataFrame(rows)
+
+
+@st.cache_data(ttl=60)
+def load_live_monitor():
+    snaps = load_odds_snapshots(8)
+    cfg = load_odds_config()
+    if not snaps:
+        return {"config": cfg, "latest": None, "prev": None, "latest_df": pd.DataFrame(), "prev_df": pd.DataFrame()}
+
+    latest = snaps[0]
+    prev = snaps[1] if len(snaps) > 1 else None
+    latest_df = _flatten_snapshot_payload(latest["data"])
+    prev_df = _flatten_snapshot_payload(prev["data"]) if prev else pd.DataFrame()
+    return {"config": cfg, "latest": latest, "prev": prev, "latest_df": latest_df, "prev_df": prev_df}
+
+
+def _compute_movement(latest_df: pd.DataFrame, prev_df: pd.DataFrame, sharp_drop=-5.0, steam_rise=10.0, drift_rise=5.0):
+    if latest_df.empty:
+        return latest_df
+    if prev_df.empty:
+        out = latest_df.copy()
+        out["delta_pct"] = 0.0
+        out["movement"] = "STABLE"
+        return out
+
+    cols = ["race_id", "bamei", "tansho", "ninki", "umaban", "title"]
+    cur = latest_df[cols].rename(columns={"tansho": "current"})
+    prv = prev_df[["race_id", "bamei", "tansho"]].rename(columns={"tansho": "opening"})
+    out = cur.merge(prv, on=["race_id", "bamei"], how="left")
+    out["opening"] = out["opening"].fillna(out["current"])
+    out["delta_pct"] = (out["current"] - out["opening"]) / out["opening"].clip(lower=0.1) * 100
+
+    def classify(delta):
+        if delta <= sharp_drop:
+            return "SHARP"
+        if delta >= steam_rise:
+            return "STEAM"
+        if delta >= drift_rise:
+            return "DRIFT"
+        return "STABLE"
+
+    out["movement"] = out["delta_pct"].apply(classify)
+    return out.sort_values("delta_pct")
+
+
+def _movement_color(mv: str) -> str:
+    return {
+        "SHARP": "#8ce6c9",
+        "STEAM": "#ff8a6b",
+        "DRIFT": "#f3c96b",
+        "STABLE": "#8da2c0",
+    }.get(mv, "#8da2c0")
+
+
+def _render_status_strip():
+    picks, picks_date = load_picks()
+    monitor = load_live_monitor()
+    cfg = monitor["config"]
+    latest = monitor["latest"]
+    latest_df = monitor["latest_df"]
+    prev_df = monitor["prev_df"]
+    movement = _compute_movement(
+        latest_df,
+        prev_df,
+        sharp_drop=cfg.get("sharp_drop_threshold", -0.05) * 100,
+        steam_rise=cfg.get("steam_rise_threshold", 0.10) * 100,
+        drift_rise=cfg.get("drift_rise_threshold", 0.05) * 100,
+    )
+    live_ok = bool(latest)
+    sharp_count = int((movement["movement"] == "SHARP").sum()) if not movement.empty else 0
+    steam_count = int((movement["movement"] == "STEAM").sum()) if not movement.empty else 0
+    last_ts = latest["data"][0]["timestamp"] if latest and latest.get("data") else ""
+
+    cols = st.columns([1.7, 1, 1, 1, 1])
+    with cols[0]:
+        st.markdown(
+            f"""
+            <div class="hero">
+              <div class="hero-top">
+                <div>
+                  <div class="hero-title">🙏 うまなり地蔵AI</div>
+                  <div class="hero-sub">穴馬専門の予想・資金管理・リアル監視を一画面に集約した運用ボード</div>
+                </div>
+                <div class="hero-meta">
+                  <span class="pill {'green' if live_ok else 'warm'}">{'LIVE' if live_ok else 'NO SNAPSHOT'}</span>
+                  <span class="pill accent">更新 {datetime.now().strftime('%m/%d %H:%M')}</span>
+                  <span class="pill">監視間隔 {cfg.get('poll_interval_sec', 60)}s</span>
+                </div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with cols[1]:
+        st.markdown(f"""<div class="kpi"><div class="kpi-sub">最新スナップ</div>
+            <div class="kpi-val" style="color:#77a7ff">{'稼働' if live_ok else '待機'}</div>
+            <div class="kpi-delta">{last_ts[:16].replace('T',' ') if last_ts else '未取得'}</div></div>""",
+            unsafe_allow_html=True)
+    with cols[2]:
+        st.markdown(f"""<div class="kpi"><div class="kpi-sub">Sharp</div>
+            <div class="kpi-val" style="color:#8ce6c9">{sharp_count}</div>
+            <div class="kpi-delta">資金流入</div></div>""", unsafe_allow_html=True)
+    with cols[3]:
+        st.markdown(f"""<div class="kpi"><div class="kpi-sub">Steam</div>
+            <div class="kpi-val" style="color:#ff8a6b">{steam_count}</div>
+            <div class="kpi-delta">資金離脱</div></div>""", unsafe_allow_html=True)
+    with cols[4]:
+        st.markdown(f"""<div class="kpi"><div class="kpi-sub">買い目</div>
+            <div class="kpi-val" style="color:#f3c96b">{len((picks or {}).get('approved_bets', []))}</div>
+            <div class="kpi-delta">{picks_date or '未生成'}</div></div>""", unsafe_allow_html=True)
+
+
+def _latest_snapshot_summary():
+    monitor = load_live_monitor()
+    latest = monitor["latest"]
+    latest_df = monitor["latest_df"]
+    prev_df = monitor["prev_df"]
+    cfg = monitor["config"]
+    if latest_df.empty:
+        return None
+    mv = _compute_movement(
+        latest_df,
+        prev_df,
+        sharp_drop=cfg.get("sharp_drop_threshold", -0.05) * 100,
+        steam_rise=cfg.get("steam_rise_threshold", 0.10) * 100,
+        drift_rise=cfg.get("drift_rise_threshold", 0.05) * 100,
+    )
+    summary = {
+        "race_count": latest_df["race_id"].nunique(),
+        "horse_count": len(latest_df),
+        "sharp_count": int((mv["movement"] == "SHARP").sum()) if not mv.empty else 0,
+        "steam_count": int((mv["movement"] == "STEAM").sum()) if not mv.empty else 0,
+        "latest_title": latest["data"][0]["title"] if latest and latest.get("data") else "",
+        "latest_time": latest["data"][0]["timestamp"] if latest and latest.get("data") else "",
+        "movement": mv,
+        "config": cfg,
+    }
+    return summary
+
+
+def _build_race_trend_df(race_id: str, top_n: int = 8):
+    snaps = load_odds_snapshots(8)
+    if not snaps:
+        return pd.DataFrame()
+
+    latest_df = _flatten_snapshot_payload(snaps[0]["data"])
+    race_latest = latest_df[latest_df["race_id"] == race_id].copy()
+    if race_latest.empty:
+        return pd.DataFrame()
+
+    keep_names = (
+        race_latest.nsmallest(top_n, "tansho")
+        .sort_values("tansho")
+        ["bamei"]
+        .tolist()
+    )
+
+    rows = []
+    for snap in reversed(snaps):
+        df = _flatten_snapshot_payload(snap["data"])
+        race = df[(df["race_id"] == race_id) & (df["bamei"].isin(keep_names))]
+        ts = None
+        if not race.empty:
+            ts = pd.to_datetime(race["timestamp"].iloc[0], errors="coerce")
+        for _, row in race.iterrows():
+            rows.append({
+                "timestamp": ts if pd.notna(ts) else pd.to_datetime(snap["data"][0].get("timestamp", None), errors="coerce"),
+                "bamei": row["bamei"],
+                "tansho": row["tansho"],
+                "ninki": row["ninki"],
+                "race_id": race_id,
+            })
+    return pd.DataFrame(rows)
+
+
+@st.fragment(run_every="30s")
+def render_realtime_monitor():
+    summary = _latest_snapshot_summary()
+    if not summary:
+        st.markdown(
+            "<div class='box-warn'>リアルタイムオッズのスナップショットがありません。`pipeline/odds_scraper_36.py` を実行すると監視画面が動きます。</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    movement = summary["movement"]
+    latest_df = load_live_monitor()["latest_df"]
+    cfg = summary["config"]
+
+    st.markdown("<div class='live-shell'>", unsafe_allow_html=True)
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown(f"""<div class="kpi"><div class="kpi-sub">監視レース</div>
+            <div class="kpi-val" style="color:#77a7ff">{summary['race_count']}</div>
+            <div class="kpi-delta">最新スナップ</div></div>""", unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"""<div class="kpi"><div class="kpi-sub">監視頭数</div>
+            <div class="kpi-val" style="color:#8ce6c9">{summary['horse_count']}</div>
+            <div class="kpi-delta">対象馬</div></div>""", unsafe_allow_html=True)
+    with c3:
+        st.markdown(f"""<div class="kpi"><div class="kpi-sub">Sharp</div>
+            <div class="kpi-val" style="color:#8ce6c9">{summary['sharp_count']}</div>
+            <div class="kpi-delta">下落 監視</div></div>""", unsafe_allow_html=True)
+    with c4:
+        st.markdown(f"""<div class="kpi"><div class="kpi-sub">Steam</div>
+            <div class="kpi-val" style="color:#ff8a6b">{summary['steam_count']}</div>
+            <div class="kpi-delta">上昇 監視</div></div>""", unsafe_allow_html=True)
+
+    left, right = st.columns([1.28, 0.92], gap="large")
+    race_map = latest_df.groupby("race_id")["title"].first().sort_index()
+    race_options = list(race_map.index)
+    default_idx = 0
+    if summary["sharp_count"] and not movement.empty:
+        sharp_races = movement[movement["movement"] == "SHARP"]["race_id"].value_counts()
+        if len(sharp_races):
+            sharp_race = sharp_races.index[0]
+            if sharp_race in race_options:
+                default_idx = race_options.index(sharp_race)
+    with left:
+        selected_race = st.selectbox(
+            "注目レース",
+            race_options,
+            index=default_idx,
+            format_func=lambda rc: f"{fmt_race(rc)}  {race_map.get(rc, '')[:24]}",
+            label_visibility="collapsed",
+        )
+        trend_df = _build_race_trend_df(selected_race, top_n=8)
+        if not trend_df.empty and PLOTLY:
+            fig = px.line(
+                trend_df,
+                x="timestamp",
+                y="tansho",
+                color="bamei",
+                markers=True,
+                title=f"オッズ推移 {fmt_race(selected_race)}",
+            )
+            fig.update_layout(**_plotly_theme(), height=360, yaxis_title="単勝オッズ")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("選択レースの時系列データが足りません。")
+
+        race_now = latest_df[latest_df["race_id"] == selected_race].sort_values("tansho")
+        if not race_now.empty:
+            show_cols = [c for c in ["umaban", "bamei", "tansho", "ninki"] if c in race_now.columns]
+            race_now = race_now[show_cols].copy()
+            race_now.columns = ["馬番", "馬名", "単勝", "人気"]
+            st.dataframe(
+                race_now.style.format({"単勝": "{:.1f}", "人気": "{:d}"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with right:
+        st.markdown("<div class='sec-head'>⚡ 変動一覧</div>", unsafe_allow_html=True)
+        if movement.empty:
+            st.info("前回スナップとの差分がありません。")
+        else:
+            top_move = movement.head(12).copy()
+            for _, row in top_move.iterrows():
+                color = _movement_color(row["movement"])
+                delta = row["delta_pct"]
+                st.markdown(
+                    f"""
+                    <div class="race-line">
+                      <div>
+                        <strong>{fmt_race(row['race_id'])}</strong><br>
+                        <small>{row['bamei']} / {row.get('title','')[:20]}</small>
+                      </div>
+                      <div style="text-align:right">
+                        <strong style="color:{color}">{row['movement']}</strong><br>
+                        <small class="trend-{'down' if delta < 0 else 'up' if delta > 0 else 'stable'}">{delta:+.1f}%</small>
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        st.markdown("<div class='sec-head'>⚙️ 監視設定</div>", unsafe_allow_html=True)
+        cfg_rows = pd.DataFrame(
+            [
+                {"項目": "Sharp閾値", "値": f"{cfg.get('sharp_drop_threshold', -0.05):.0%}"},
+                {"項目": "Steam閾値", "値": f"{cfg.get('steam_rise_threshold', 0.10):.0%}"},
+                {"項目": "Drift閾値", "値": f"{cfg.get('drift_rise_threshold', 0.05):.0%}"},
+                {"項目": "Poll間隔", "値": f"{cfg.get('poll_interval_sec', 60)} 秒"},
+            ]
+        )
+        st.dataframe(cfg_rows, use_container_width=True, hide_index=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ── サイドバー ────────────────────────────────────────────────
@@ -280,13 +730,14 @@ with st.sidebar:
 # ── ヘッダー ────────────────────────────────────────────────
 st.markdown("# 🙏 うまなり地蔵AI")
 st.caption(f"穴馬専門 高オッズMLシステム | {YEAR}年シーズン | Kelly×0.10 安全運用モード")
+_render_status_strip()
 
 # ── タブ ────────────────────────────────────────────────────
 tabs = st.tabs([
-    "⚡ ライブ予想", "📊 成績サマリー", "💰 資金管理",
-    "🏇 馬券戦略", "📈 モデル検証", "🔬 SHAP", "🧬 血統", "🔄 バックテスト", "📚 知識ベース"
+    "⚡ ライブ予想", "📡 リアルタイム監視", "📊 成績サマリー", "💰 資金管理",
+    "🏇 馬券戦略", "📈 モデル検証", "🔬 SHAP", "🧬 血統", "🔄 バックテスト", "📚 知識ベース", "🐎 レース種別"
 ])
-tab_live, tab_sum, tab_bk, tab_strat, tab_model, tab_shap, tab_blood, tab_bt, tab_kb = tabs
+tab_live, tab_monitor, tab_sum, tab_bk, tab_strat, tab_model, tab_shap, tab_blood, tab_bt, tab_kb, tab_rt = tabs
 
 
 # ════════════════════════════════════════════════════════════
@@ -404,6 +855,15 @@ with tab_live:
 
 
 # ════════════════════════════════════════════════════════════
+# TAB 2: リアルタイム監視
+# ════════════════════════════════════════════════════════════
+with tab_monitor:
+    st.markdown("<div class='sec-head'>📡 リアルタイム監視ボード</div>", unsafe_allow_html=True)
+    st.caption("最新オッズスナップショットを読み込み、Sharp / Steam / Drift をそのまま追跡します。")
+    render_realtime_monitor()
+
+
+# ════════════════════════════════════════════════════════════
 # TAB 2: 成績サマリー
 # ════════════════════════════════════════════════════════════
 with tab_sum:
@@ -511,29 +971,40 @@ with tab_bk:
     if hist:
         st.markdown("<div class='sec-head'>📈 資金推移</div>", unsafe_allow_html=True)
         hdf = pd.DataFrame(hist)
-        hdf['date'] = pd.to_datetime(hdf['date'])
+        if 'date' in hdf.columns:
+            hdf['date'] = pd.to_datetime(hdf['date'])
+        elif 'month' in hdf.columns:
+            hdf['date'] = pd.to_datetime(hdf['month'].astype(str) + "-01", errors='coerce')
+        else:
+            hdf['date'] = pd.date_range(end=pd.Timestamp.now(), periods=len(hdf), freq='D')
         hdf = hdf.sort_values('date')
+        value_col = 'bankroll_after' if 'bankroll_after' in hdf.columns else 'balance' if 'balance' in hdf.columns else None
         if PLOTLY:
             fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=hdf['date'], y=hdf['bankroll_after'],
-                mode='lines+markers', name='資金残高',
-                line=dict(color='#58a6ff',width=2),
-                marker=dict(color=hdf['hit'].map({1:'#3fb950',0:'#f85149'}),size=7),
-                fill='tozeroy', fillcolor='rgba(88,166,255,0.06)',
-                hovertemplate='%{x|%m/%d}<br>%{y:,.0f}円<extra></extra>'
-            ))
+            if value_col:
+                marker_color = '#58a6ff'
+                if 'hit' in hdf.columns:
+                    marker_color = hdf['hit'].map({1:'#3fb950',0:'#f85149'}).fillna('#58a6ff')
+                fig.add_trace(go.Scatter(
+                    x=hdf['date'], y=hdf[value_col],
+                    mode='lines+markers', name='資金残高',
+                    line=dict(color='#58a6ff',width=2),
+                    marker=dict(color=marker_color,size=7),
+                    fill='tozeroy', fillcolor='rgba(88,166,255,0.06)',
+                    hovertemplate='%{x|%Y-%m}<br>%{y:,.0f}円<extra></extra>'
+                ))
             fig.add_hline(y=ini, line_dash='dash', line_color='#8b949e', annotation_text='初期資金')
             fig.update_layout(**_plotly_theme(), height=300, yaxis_title='残高(円)')
             st.plotly_chart(fig, use_container_width=True)
 
             # DD チャート
-            peak_s = hdf['bankroll_after'].cummax()
-            dd_s   = (hdf['bankroll_after']-peak_s)/peak_s*100
-            fig2 = px.area(x=hdf['date'], y=dd_s, title="ドローダウン推移(%)",
-                           color_discrete_sequence=['#f85149'])
-            fig2.update_layout(**_plotly_theme(), height=180)
-            st.plotly_chart(fig2, use_container_width=True)
+            if value_col:
+                peak_s = hdf[value_col].cummax()
+                dd_s   = (hdf[value_col]-peak_s)/peak_s*100
+                fig2 = px.area(x=hdf['date'], y=dd_s, title="ドローダウン推移(%)",
+                               color_discrete_sequence=['#f85149'])
+                fig2.update_layout(**_plotly_theme(), height=180)
+                st.plotly_chart(fig2, use_container_width=True)
 
     # バンクロール成長シミュレーション
     bk_sim = load_bk_sim()
@@ -594,6 +1065,19 @@ with tab_strat:
         st.markdown("<div class='sec-head'>🎟️ 推奨馬券種 (ticket_optimizer)</div>", unsafe_allow_html=True)
         tk_df = load_ticket_recs()
         if not tk_df.empty and 'ticket_type' in tk_df.columns:
+            m1, m2, m3, m4 = st.columns(4)
+            avg_ev = float(tk_df['ev'].mean() * 100) if 'ev' in tk_df.columns else 0.0
+            max_ev = float(tk_df['ev'].max() * 100) if 'ev' in tk_df.columns else 0.0
+            avg_bet = float(tk_df['recommended_bet'].mean()) if 'recommended_bet' in tk_df.columns else 0.0
+            with m1:
+                st.metric("推奨R数", len(tk_df))
+            with m2:
+                st.metric("平均期待値", f"{avg_ev:+.1f}%")
+            with m3:
+                st.metric("最大期待値", f"{max_ev:+.1f}%")
+            with m4:
+                st.metric("平均推奨額", f"{avg_bet:,.0f}円")
+
             dist = tk_df['ticket_type'].value_counts().reset_index()
             dist.columns = ['馬券種','件数']
             if PLOTLY:
@@ -605,15 +1089,38 @@ with tab_strat:
                 st.plotly_chart(fig, use_container_width=True)
 
             # EV比較テーブル（上位10件）
-            st.markdown("**EV比較 TOP10**")
+            st.markdown("**推奨一覧 TOP10**")
             top10 = tk_df.nlargest(10, 'ev') if 'ev' in tk_df.columns else tk_df.head(10)
             top10 = top10.copy()
             if 'race_code' in top10.columns:
                 top10.insert(0, 'レース', top10['race_code'].apply(fmt_race))
-            show = [c for c in ['レース','ticket_type','est_odds','ev','recommended_bet']
+            if 'horses' in top10.columns:
+                top10['本命'] = top10['horses'].apply(lambda x: x[0] if isinstance(x, list) and len(x) > 0 else "-")
+                top10['相手'] = top10['horses'].apply(lambda x: " / ".join(x[1:3]) if isinstance(x, list) and len(x) > 1 else "-")
+            rename_map = {
+                'ticket_type': '馬券種',
+                'est_odds': '推定オッズ',
+                'ev': '期待値',
+                'recommended_bet': '推奨金額',
+                'reason': '理由',
+            }
+            top10 = top10.rename(columns=rename_map)
+            show = [c for c in ['レース','馬券種','本命','相手','推定オッズ','期待値','推奨金額','理由']
                     if c in top10.columns]
-            st.dataframe(top10[show] if show else top10,
+            df_show = top10[show] if show else top10
+            if '期待値' in df_show.columns:
+                df_show = df_show.copy()
+                df_show['期待値'] = pd.to_numeric(df_show['期待値'], errors='coerce').fillna(0).map(lambda x: f"{x*100:+.1f}%")
+            if '推定オッズ' in df_show.columns:
+                df_show['推定オッズ'] = pd.to_numeric(df_show['推定オッズ'], errors='coerce').fillna(0).map(lambda x: f"{x:.1f}倍")
+            if '推奨金額' in df_show.columns:
+                df_show['推奨金額'] = pd.to_numeric(df_show['推奨金額'], errors='coerce').fillna(0).map(lambda x: f"{int(x):,}円")
+            st.dataframe(df_show,
                          use_container_width=True, hide_index=True)
+            summary_md = load_ticket_recs_summary()
+            if summary_md:
+                with st.expander("📄 馬券推薦サマリー"):
+                    st.markdown(summary_md)
         else:
             st.info("`python pipeline/ticket_optimizer_30.py` を実行")
 
@@ -886,6 +1393,7 @@ with tab_bt:
 with tab_kb:
     KB_DIR  = os.path.join(BASE, "data", "knowledge_base")
     LATEST  = os.path.join(KB_DIR, "LATEST.json")
+    SUMMARY = os.path.join(KB_DIR, "knowledge_summary.json")
     CONF_LOG = os.path.join(KB_DIR, "confidence_history.csv")
     CHANGELOG = os.path.join(KB_DIR, "changelog.md")
 
@@ -906,6 +1414,7 @@ with tab_kb:
         st.info("📚 知識ベースがまだ生成されていません。`python pipeline/knowledge_curator_41.py` を実行してください。")
     else:
         kb_state = json.load(open(LATEST, encoding="utf-8"))
+        kb_summary = json.load(open(SUMMARY, encoding="utf-8")) if os.path.exists(SUMMARY) else {}
         active_items = {k: v for k, v in kb_state.items() if v.get("status") == "active"}
         depr_items   = {k: v for k, v in kb_state.items() if v.get("status") == "deprecated"}
 
@@ -932,6 +1441,49 @@ with tab_kb:
               unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── 最新サマリー ─────────────────────────────────────
+        if kb_summary:
+            st.markdown("<div class='sec-head'>🧠 最新サマリー</div>", unsafe_allow_html=True)
+            s1, s2, s3, s4 = st.columns(4)
+            with s1:
+                st.metric("更新日時", kb_summary.get("generated_at", "")[:19] or "-")
+            with s2:
+                st.metric("高確信度", kb_summary.get("high_conf_count", 0))
+            with s3:
+                st.metric("中確信度", kb_summary.get("medium_conf_count", 0))
+            with s4:
+                st.metric("低確信度", kb_summary.get("low_conf_count", 0))
+
+            cat_rows = []
+            for cat, info in kb_summary.get("categories", {}).items():
+                cat_rows.append({
+                    "カテゴリ": f"{cat} {info.get('label','')}",
+                    "件数": info.get("count", 0),
+                    "高確信度": info.get("high_conf", 0),
+                    "平均confidence": info.get("avg_confidence", 0),
+                })
+            if cat_rows:
+                st.dataframe(
+                    pd.DataFrame(cat_rows).sort_values("件数", ascending=False),
+                    use_container_width=True, hide_index=True
+                )
+
+            top_items = kb_summary.get("top_items", [])[:5]
+            if top_items:
+                top_df = pd.DataFrame([{
+                    "ID": x.get("id", ""),
+                    "カテゴリ": x.get("category", ""),
+                    "confidence": x.get("confidence", 0),
+                    "n": x.get("sample_count", 0),
+                    "条件": x.get("condition_summary", ""),
+                    "知見": x.get("claim", "")[:50],
+                } for x in top_items])
+                st.dataframe(
+                    top_df.style.background_gradient(subset=["confidence"], cmap="RdYlGn", vmin=0, vmax=1)
+                              .format({"confidence": "{:.3f}", "n": "{:,}"}),
+                    use_container_width=True, hide_index=True
+                )
 
         # ── フィルタ ─────────────────────────────────────────
         col_f1, col_f2, col_f3 = st.columns([2, 2, 1])
@@ -1075,3 +1627,152 @@ with tab_kb:
 # ── フッター ─────────────────────────────────────────────────
 st.divider()
 st.caption("🙏 うまなり地蔵AI v2 | Kelly×0.10 安全運用 | データと閻魔大王の御加護を信じよ👹")
+
+# ════════════════════════════════════════════════════════════
+# TAB 11: race type breakdown + EV boost map
+# ════════════════════════════════════════════════════════════
+with tab_rt:
+    st.markdown("### Race type performance & EV boost map")
+
+    EV_CSV = os.path.join(BASE, f"ev_analysis_{datetime.now().year}.csv")
+    BOOST_MAP = os.path.join(BASE, "data", "knowledge_base", "ev_boost_map.json")
+
+    RTYPE_LABELS = {
+        "debut":    "New Horse",
+        "shogai":   "Obstacle",
+        "handicap": "Handicap",
+        "default":  "Standard",
+    }
+    RTYPE_THRESHOLDS = {
+        "debut":    0.10,
+        "shogai":   0.10,
+        "handicap": 0.20,
+        "default":  0.15,
+    }
+
+    # ── EV CSV section ────────────────────────────────────────
+    if os.path.exists(EV_CSV):
+        ev_df = pd.read_csv(EV_CSV, encoding="utf-8-sig", low_memory=False)
+
+        if "race_type" not in ev_df.columns:
+            st.info("race_type column not found -- run ev_engine_10.py to regenerate.")
+        else:
+            ev_df["race_type_label"] = ev_df["race_type"].map(RTYPE_LABELS).fillna("Standard")
+
+            # KPI row
+            c1, c2, c3, c4 = st.columns(4)
+            total = len(ev_df)
+            pos_mask = ev_df["expected_value"] >= ev_df.get("ev_threshold", pd.Series(0.15, index=ev_df.index))
+            pos = pos_mask.sum() if "ev_threshold" in ev_df.columns else (ev_df["expected_value"] >= 0.15).sum()
+            with c1:
+                st.metric("Total horses", f"{total:,}")
+            with c2:
+                st.metric("Positive EV", f"{pos:,}")
+            with c3:
+                avg_ev = ev_df["expected_value"].mean() * 100
+                st.metric("Avg EV", f"{avg_ev:+.1f}%")
+            with c4:
+                avg_odds = ev_df["odds_decimal"].mean() if "odds_decimal" in ev_df.columns else 0
+                st.metric("Avg odds", f"{avg_odds:.1f}x")
+
+            st.markdown("---")
+
+            # Per race_type table
+            st.markdown("#### EV by race type")
+            rows = []
+            for rtype, grp in ev_df.groupby("race_type"):
+                label     = RTYPE_LABELS.get(rtype, rtype)
+                threshold = RTYPE_THRESHOLDS.get(rtype, 0.15)
+                pos_grp   = grp[grp["expected_value"] >= threshold]
+                hit_col   = "kakutei_chakujun" if "kakutei_chakujun" in grp.columns else None
+                hit_rate  = (grp[hit_col] == 1).mean() * 100 if hit_col else float("nan")
+                if hit_col and "odds_decimal" in grp.columns:
+                    ret = (grp[grp[hit_col] == 1]["odds_decimal"] * 100).sum()
+                    roi = ret / (len(grp) * 100) * 100 if len(grp) > 0 else float("nan")
+                else:
+                    roi = float("nan")
+                rows.append({
+                    "race type": label,
+                    "horses": len(grp),
+                    "positive EV": len(pos_grp),
+                    "EV threshold": f"{threshold*100:.0f}%",
+                    "avg EV": f"{grp['expected_value'].mean()*100:+.1f}%",
+                    "hit rate": f"{hit_rate:.1f}%" if hit_rate == hit_rate else "—",
+                    "ROI": f"{roi:.1f}%" if roi == roi else "—",
+                })
+            if rows:
+                st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+            # EV distribution bar chart per race type
+            st.markdown("#### EV distribution per race type")
+            try:
+                import altair as alt
+                chart_df = ev_df[["expected_value", "race_type_label"]].copy()
+                chart_df["ev_pct"] = chart_df["expected_value"] * 100
+                chart = (
+                    alt.Chart(chart_df)
+                    .mark_bar(opacity=0.7)
+                    .encode(
+                        x=alt.X("ev_pct:Q", bin=alt.Bin(step=5), title="EV (%)"),
+                        y=alt.Y("count()", title="horses"),
+                        color=alt.Color("race_type_label:N", title="race type"),
+                        tooltip=["race_type_label", "count()"],
+                    )
+                    .properties(height=280)
+                )
+                st.altair_chart(chart, use_container_width=True)
+            except Exception as e:
+                st.caption(f"chart skipped: {e}")
+    else:
+        st.info(f"ev_analysis_{datetime.now().year}.csv not found -- run ev_engine_10.py")
+
+    st.markdown("---")
+
+    # ── EV boost map section ──────────────────────────────────
+    st.markdown("#### knowledge_base EV boost map")
+
+    if os.path.exists(BOOST_MAP):
+        with open(BOOST_MAP, encoding="utf-8") as _f:
+            boost_map = json.load(_f)
+
+        st.caption(f"{len(boost_map)} boost entries loaded from ev_boost_map.json")
+
+        # Show as table (top 50 by boost value)
+        boost_rows = sorted(
+            [{"key": k, "boost": float(v)} for k, v in boost_map.items()],
+            key=lambda r: abs(r["boost"] - 1.0), reverse=True
+        )[:50]
+        if boost_rows:
+            bdf = pd.DataFrame(boost_rows)
+            bdf["boost_pct"] = bdf["boost"].apply(lambda x: f"{(x-1)*100:+.0f}%")
+            bdf["type"] = bdf["key"].apply(
+                lambda k: "race_code" if k.isdigit() and len(k) >= 8 else "sire_venue"
+            )
+            st.dataframe(
+                bdf[["key", "type", "boost", "boost_pct"]].rename(
+                    columns={"key": "key", "type": "type",
+                             "boost": "multiplier", "boost_pct": "effect"}
+                ),
+                use_container_width=True, height=350
+            )
+
+        # Manual refresh button
+        if st.button("Refresh boost map (run knowledge_curator)"):
+            with st.spinner("running knowledge_curator_41..."):
+                try:
+                    from pipeline.knowledge_curator_41 import run_knowledge_curator
+                    run_knowledge_curator(days=7)
+                    st.success("Done! Reload the page.")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+    else:
+        st.info("ev_boost_map.json not found -- run `python pipeline/knowledge_curator_41.py`")
+        if st.button("Generate boost map now"):
+            with st.spinner("running knowledge_curator_41..."):
+                try:
+                    from pipeline.knowledge_curator_41 import run_knowledge_curator
+                    run_knowledge_curator(days=7)
+                    st.success("Done! Reload the page.")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+

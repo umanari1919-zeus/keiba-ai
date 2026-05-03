@@ -152,7 +152,7 @@ def run_optuna_advanced(n_trials_lgb=80, n_trials_xgb=60, n_trials_cb=50):
     features = saved['features']
 
     df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
-                     encoding="utf-8-sig", low_memory=False)
+                     encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     df = df.fillna(0)
     feats = [f for f in features if f in df.columns]
 

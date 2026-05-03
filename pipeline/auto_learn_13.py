@@ -224,7 +224,7 @@ def run_auto_learn(simulation_csv="D:\\keiba_ai\\simulation_2025.csv"):
     # Step 2: 予測との照合
     try:
         pred_df = pd.read_csv(simulation_csv, encoding="utf-8-sig",
-                              dtype={'race_code': str})
+                              dtype={'race_code': str}, on_bad_lines="skip")
         perf = evaluate_predictions(actual_df, pred_df)
     except FileNotFoundError:
         print(f"  ⚠️ {simulation_csv} が見つかりません")

@@ -9,6 +9,7 @@ from datetime import datetime
 
 from pipeline.kelly_bankroll_09 import load_bankroll, calculate_kelly_bet
 from pipeline.ev_engine_10 import build_ev_dataframe, extract_win_probabilities
+from pipeline.ensemble_utils import load_ensemble_weights
 
 # 各馬券種の設定（推定的中確率補正・最低オッズ・ケリー分数）
 BET_CONFIG = {
@@ -108,9 +109,10 @@ def run_portfolio_optimization(year=2025):
     cb_model  = saved['cb_model']
     le        = saved['le']
     features  = saved['features']
+    weights   = load_ensemble_weights(saved)
 
     df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
-                     encoding="utf-8-sig", low_memory=False)
+                     encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     df = df.fillna(0)
     test_df = df[df['kaisai_nen'] == year].copy()
 
@@ -120,9 +122,9 @@ def run_portfolio_optimization(year=2025):
 
     X_test = test_df[features]
     ensemble_proba = (
-        0.5 * lgb_model.predict_proba(X_test) +
-        0.3 * xgb_model.predict_proba(X_test) +
-        0.2 * cb_model.predict_proba(X_test)
+        weights[0] * lgb_model.predict_proba(X_test) +
+        weights[1] * xgb_model.predict_proba(X_test) +
+        weights[2] * cb_model.predict_proba(X_test)
     )
 
     ev_df = build_ev_dataframe(test_df, ensemble_proba, le)

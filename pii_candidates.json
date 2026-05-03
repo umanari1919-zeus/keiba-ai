@@ -1,0 +1,70 @@
+[
+  {
+    "file": "D:\\keiba_ai\\ev_analysis_2025.csv",
+    "suspect_columns": [
+      "shiba_middle_1chaku",
+      "dirt_middle_1chaku",
+      "middle_win_rate"
+    ]
+  },
+  {
+    "file": "D:\\keiba_ai\\ev_analysis_2026.csv",
+    "suspect_columns": [
+      "shiba_middle_1chaku",
+      "dirt_middle_1chaku",
+      "middle_win_rate"
+    ]
+  },
+  {
+    "file": "D:\\keiba_ai\\data\\today_entries_20260419.csv",
+    "suspect_columns": [
+      "shiba_middle_1chaku",
+      "dirt_middle_1chaku"
+    ]
+  },
+  {
+    "file": "D:\\keiba_ai\\data\\today_entries_20260426.csv",
+    "suspect_columns": [
+      "shiba_middle_1chaku",
+      "dirt_middle_1chaku",
+      "middle_win_rate"
+    ]
+  },
+  {
+    "file": "D:\\keiba_ai\\pedigree_output\\sire_score_table.csv",
+    "suspect_columns": [
+      "sire_mid_wr"
+    ]
+  },
+  {
+    "file": "D:\\keiba_ai\\archive\\keiba_data_features.csv",
+    "suspect_columns": [
+      "shiba_middle_1chaku",
+      "dirt_middle_1chaku",
+      "middle_win_rate"
+    ]
+  },
+  {
+    "file": "D:\\keiba_ai\\archive\\keiba_data.csv",
+    "suspect_columns": [
+      "shiba_middle_1chaku",
+      "dirt_middle_1chaku"
+    ]
+  },
+  {
+    "file": "D:\\keiba_ai\\.claude\\worktrees\\brave-kilby-e79e98\\ev_analysis_2025.csv",
+    "suspect_columns": [
+      "shiba_middle_1chaku",
+      "dirt_middle_1chaku",
+      "middle_win_rate"
+    ]
+  },
+  {
+    "file": "D:\\keiba_ai\\.claude\\worktrees\\brave-kilby-e79e98\\ev_analysis_2026.csv",
+    "suspect_columns": [
+      "shiba_middle_1chaku",
+      "dirt_middle_1chaku",
+      "middle_win_rate"
+    ]
+  }
+]

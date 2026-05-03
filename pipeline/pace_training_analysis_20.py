@@ -31,7 +31,7 @@ def build_training_features(year_from=2020):
             COALESCE(NULLIF(laptime_3furlong,''),NULL)::float       as wood_lap3f,
             COALESCE(NULLIF(time_gokei_2furlong,''),NULL)::float   as wood_2f,
             COALESCE(NULLIF(laptime_2furlong,''),NULL)::float       as wood_lap2f,
-            COALESCE(NULLIF(time_gokei_1furlong,''),NULL)::float   as wood_1f
+            COALESCE(NULLIF(laptime_1furlong,''),NULL)::float       as wood_1f
         FROM woodchip_chokyo
         WHERE chokyo_nengappi >= :year
     """)
@@ -45,7 +45,6 @@ def build_training_features(year_from=2020):
             COALESCE(NULLIF(lap_time_4furlong,''),NULL)::float      as hanro_lap4f,
             COALESCE(NULLIF(time_gokei_3furlong,''),NULL)::float   as hanro_3f,
             COALESCE(NULLIF(lap_time_3furlong,''),NULL)::float      as hanro_lap3f,
-            COALESCE(NULLIF(time_gokei_1furlong,''),NULL)::float   as hanro_1f,
             COALESCE(NULLIF(lap_time_1furlong,''),NULL)::float      as hanro_lap1f
         FROM hanro_chokyo
         WHERE chokyo_nengappi >= :year
@@ -79,7 +78,7 @@ def build_training_features(year_from=2020):
     merged['hanro_intensity'] = (HANRO_BASE - merged['hanro_4f'].fillna(HANRO_BASE)) / HANRO_BASE
 
     # 最終1F（切れ）スコア
-    merged['wood_kick']  = (12.5 - merged['wood_lap1f'].fillna(12.5)) / 12.5
+    merged['wood_kick']  = (12.5 - merged['wood_1f'].fillna(12.5)) / 12.5
     merged['hanro_kick'] = (13.5 - merged['hanro_lap1f'].fillna(13.5)) / 13.5
 
     # 総合調教スコア
@@ -143,7 +142,7 @@ def run_pace_training_analysis():
     print("="*55)
 
     df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
-                     encoding="utf-8-sig", low_memory=False)
+                     encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
 
     print("  📋 調教タイム特徴量を構築中...")
     training_df = build_training_features()

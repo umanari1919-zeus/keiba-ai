@@ -118,7 +118,7 @@ def train_rl_strategy(n_timesteps=200_000):
     # 学習データ（simulation_2025.csv から）
     try:
         sim_df = pd.read_csv("D:\\keiba_ai\\simulation_2025.csv",
-                             encoding="utf-8-sig")
+                             encoding="utf-8-sig", on_bad_lines="skip")
         sim_df['win_prob'] = sim_df.get('win_prob', 0.1)
         if 'odds' not in sim_df.columns and 'tansho_odds' in sim_df.columns:
             sim_df['odds'] = sim_df['tansho_odds'] / 10

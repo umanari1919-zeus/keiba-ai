@@ -1,0 +1,124 @@
+{
+  "artifact_type": "orchestrator_dag",
+  "prompt_id": "core_umanari_v1_orchestrator",
+  "version": "1.0.0",
+  "auto_stop_conditions": {
+    "mismatch_rate_gt": 0.02,
+    "quarantine_24h_increase_gt": 50,
+    "spearman_drop_pct": 0.2
+  },
+  "dag": [
+    {
+      "task_id": "ingest",
+      "script": "01_ingest.py"
+    },
+    {
+      "task_id": "normalize",
+      "script": "02_normalize.py",
+      "depends_on": [
+        "ingest"
+      ]
+    },
+    {
+      "task_id": "feature_gen",
+      "script": "03_feature_gen.py",
+      "depends_on": [
+        "normalize"
+      ]
+    },
+    {
+      "task_id": "rag_index",
+      "script": "10_rag_index.py",
+      "depends_on": [
+        "feature_gen"
+      ]
+    },
+    {
+      "task_id": "race_select",
+      "script": "17_race_select.py",
+      "depends_on": [
+        "feature_gen"
+      ]
+    },
+    {
+      "task_id": "batch_inference",
+      "script": "04_batch_inference.py",
+      "depends_on": [
+        "feature_gen",
+        "race_select"
+      ]
+    },
+    {
+      "task_id": "anomaly",
+      "script": "14_anomaly.py",
+      "depends_on": [
+        "batch_inference"
+      ]
+    },
+    {
+      "task_id": "explain",
+      "script": "05_explain.py",
+      "depends_on": [
+        "batch_inference",
+        "anomaly"
+      ]
+    },
+    {
+      "task_id": "upsetscore",
+      "script": "08_upsetscore.py",
+      "depends_on": [
+        "batch_inference"
+      ]
+    },
+    {
+      "task_id": "publish",
+      "script": "06_publish.py",
+      "depends_on": [
+        "explain"
+      ]
+    },
+    {
+      "task_id": "trade",
+      "script": "07_trade.py",
+      "depends_on": [
+        "explain"
+      ]
+    },
+    {
+      "task_id": "portfolio",
+      "script": "16_portfolio.py",
+      "depends_on": [
+        "trade"
+      ]
+    },
+    {
+      "task_id": "condition_adjust",
+      "script": "18_condition_adjust.py",
+      "depends_on": [
+        "portfolio"
+      ]
+    },
+    {
+      "task_id": "bankroll",
+      "script": "20_bankroll.py",
+      "depends_on": [
+        "condition_adjust"
+      ]
+    },
+    {
+      "task_id": "roi_track",
+      "script": "15_roi_track.py",
+      "depends_on": [
+        "bankroll"
+      ]
+    },
+    {
+      "task_id": "monitor",
+      "script": "09_monitor.py",
+      "depends_on": [
+        "publish",
+        "roi_track"
+      ]
+    }
+  ]
+}

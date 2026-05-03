@@ -2,11 +2,13 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
+from pipeline.db_sync_42 import add_ingest_meta, write_snapshot
+
 def feature_engineering():
     print(f"⚙️ [{datetime.now()}] 特徴量計算開始...")
     
     df = pd.read_csv("D:\\keiba_ai\\keiba_data.csv",
-                     encoding="utf-8-sig", low_memory=False)
+                     encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     df = df.fillna(0)
     
     # 日付でソート
@@ -66,29 +68,87 @@ def feature_engineering():
     df['middle_win_rate'] = df['shiba_middle_1chaku'] + df['dirt_middle_1chaku']
     df['long_win_rate'] = df['shiba_long_1chaku'] + df['dirt_long_1chaku']
 
-    # 騎手の勝率
+    # 騎手の勝率（expanding window でデータリーク防止: 当該レース以前のデータのみ使用）
     print("🏇 騎手の勝率を計算中...")
-    kishu_wins = df[df['kakutei_chakujun'] == 1].groupby('kishu_code').size()
-    kishu_total = df.groupby('kishu_code').size()
-    df['kishu_win_rate'] = df['kishu_code'].map((kishu_wins / kishu_total).fillna(0))
-
-    # 調教師の勝率
-    print("👨‍🏫 調教師の勝率を計算中...")
-    cho_wins = df[df['kakutei_chakujun'] == 1].groupby('chokyoshi_code').size()
-    cho_total = df.groupby('chokyoshi_code').size()
-    df['chokyoshi_win_rate'] = df['chokyoshi_code'].map((cho_wins / cho_total).fillna(0))
-
-    # 騎手×競馬場の相性
-    print("🏟️ 騎手×競馬場の相性を計算中...")
-    kishu_keibajo_wins = (
-        df[df['kakutei_chakujun'] == 1]
-        .groupby(['kishu_code', 'keibajo_code']).size()
+    df = df.sort_values('race_code').reset_index(drop=True)
+    df['_w'] = (df['kakutei_chakujun'] == 1).astype(float)
+    df['kishu_win_rate'] = (
+        df.groupby('kishu_code')['_w']
+        .transform(lambda x: x.shift(1).expanding().mean())
+        .fillna(0)
     )
-    kishu_keibajo_total = df.groupby(['kishu_code', 'keibajo_code']).size()
-    kishu_keibajo_rate = (kishu_keibajo_wins / kishu_keibajo_total).fillna(0)
-    df['kishu_keibajo_win_rate'] = df.set_index(
-        ['kishu_code', 'keibajo_code']
-    ).index.map(kishu_keibajo_rate.to_dict().get).fillna(0).values
+
+    # 調教師の勝率（expanding window）
+    print("👨‍🏫 調教師の勝率を計算中...")
+    df['chokyoshi_win_rate'] = (
+        df.groupby('chokyoshi_code')['_w']
+        .transform(lambda x: x.shift(1).expanding().mean())
+        .fillna(0)
+    )
+
+    # 騎手×競馬場の相性（expanding window）
+    print("🏟️ 騎手×競馬場の相性を計算中...")
+    df['kishu_keibajo_win_rate'] = (
+        df.groupby(['kishu_code', 'keibajo_code'])['_w']
+        .transform(lambda x: x.shift(1).expanding().mean())
+        .fillna(0)
+    )
+    df.drop(columns=['_w'], inplace=True)
+
+    # ── data_fetch_01 新列をパススルー & 派生特徴量 ────────────────
+    print("🆕 新列クロス特徴量を計算中...")
+
+    # 存在しない場合は 0 で初期化（古い keiba_data.csv との互換性）
+    _new_cols_defaults = {
+        'grade_score': 1, 'prev_grade_score': 1, 'grade_up': 0,
+        'kishu_change': 0, 'prev_keibajo': 0, 'prev_kyori': 0,
+        'chokyo_3f_avg3': 0, 'chokyo_3f_best': 0,
+        'chokyo_3f_std': 0, 'chokyo_trend': 0,
+        'chokyo_improving': 0, 'fresh_improving': 0,
+        'chokyo_lap_3f': 0, 'chokyo_lap_1f': 0, 'chokyo_4f': 0,
+        'kishu_keibajo_win_rate': 0, 'chokyoshi_place_win_rate': 0,
+    }
+    for col, default in _new_cols_defaults.items():
+        if col not in df.columns:
+            df[col] = default
+        else:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(default)
+
+    # グレード×休み明け: 格上げ+休養+調教好調 の三拍子フラグ
+    df['grade_up_fresh'] = (
+        (df['grade_up'] == 1) & (df['fresh_improving'] == 1)
+    ).astype(int)
+
+    # 調教質スコア: 速さ×安定性（低std=安定）
+    df['chokyo_quality'] = (
+        df['chokyo_3f_best'] * (1.0 / (df['chokyo_3f_std'] + 1.0))
+    )
+
+    # 騎手変更×グレード: 格上げ+乗り替わりは荒れやすい
+    df['kishu_change_grade_up'] = df['kishu_change'] * df['grade_up']
+
+    # 調教師スキル×競馬場適性
+    df['chokyoshi_rate_x_grade'] = (
+        df['chokyoshi_place_win_rate'] * df['grade_score']
+    )
+
+    # 前走着順×前走グレード: 前走の質を補正した着順
+    df['prev_quality_chakujun'] = (
+        df['prev_chakujun'] / (df['prev_grade_score'] + 1e-6)
+    )
+
+    # 馬場変化フラグ: 前走と今走で競馬場が変わったか
+    df['keibajo_change'] = (
+        df['prev_keibajo'].astype(str) != df['keibajo_code'].astype(str)
+    ).astype(int)
+
+    # 距離変化: 今走距離 - 前走距離
+    df['kyori_change'] = (
+        pd.to_numeric(df['kyori'], errors='coerce').fillna(0) -
+        pd.to_numeric(df['prev_kyori'], errors='coerce').fillna(0)
+    )
+    df['kyori_up']   = (df['kyori_change'] > 0).astype(int)
+    df['kyori_down'] = (df['kyori_change'] < 0).astype(int)
 
     # クロス特徴量
     print("🔀 クロス特徴量を計算中...")
@@ -107,8 +167,8 @@ def feature_engineering():
 
     df = df.fillna(0)
 
-    # ニックス指数を結合
-    print("🐴 ニックス指数を結合中...")
+    # nicks join
+    print("nicks join...")
     nicks_path = "D:\\keiba_ai\\pedigree_output\\nicks_feature.csv"
     try:
         nicks_df = pd.read_csv(nicks_path, encoding="utf-8-sig")
@@ -125,18 +185,29 @@ def feature_engineering():
         df['nick_win_rate']   = df['nick_win_rate'].fillna(0.0)
         df['nick_place_rate'] = df['nick_place_rate'].fillna(0.0)
         hits = df['nick_index'].gt(1.0).sum()
-        print(f"  ✅ ニックス結合完了（nick_index>1.0：{hits:,}件）")
+        print(f"  nicks ok: {hits:,}")
     except FileNotFoundError:
-        print(f"  ⚠️ {nicks_path} が見つかりません。ニックス特徴量をゼロで埋めます")
         for col in ['nick_index', 'nick_roi', 'nick_win_rate', 'nick_place_rate']:
             df[col] = 0.0
 
-    # 保存
+    # save
     df.to_csv("D:\\keiba_ai\\keiba_data_features.csv",
               index=False, encoding="utf-8-sig")
+    try:
+        from pipeline.db_sync_42 import add_ingest_meta, write_snapshot
+        snapshot = add_ingest_meta(df, source_name="feature_eng_02")
+        ok = write_snapshot(
+            snapshot,
+            "keiba_data_features_snapshot",
+            if_exists="replace",
+            source_name="feature_eng_02",
+        )
+        if ok:
+            print("DB sync: keiba_data_features_snapshot")
+    except Exception as e:
+        print(f"DB sync skip: {e}")
 
-    print(f"✅ 特徴量計算完了！件数：{len(df):,}件")
-    print(f"📋 列数：{len(df.columns)}列")
+    print(f"done: {len(df):,} rows, {len(df.columns)} cols")
     return df
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ import pandas as pd
 import pickle, json, os, itertools
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
+from pipeline.ensemble_utils import load_ensemble_weights
 
 BASE_DIR   = "D:\\keiba_ai"
 MODEL_FILE = f"{BASE_DIR}\\model_v8.pkl"
@@ -270,7 +271,7 @@ def run_backtest_engine(year: int = None) -> dict:
         le    = saved['le']
         feats = [f for f in saved['features'] if f in df.columns]
         X     = df[feats].fillna(0)
-        weights = saved.get('ensemble_weights', [0.5, 0.3, 0.2])
+        weights = load_ensemble_weights(saved)
         p_ens = (weights[0] * lgb_m.predict_proba(X) +
                  weights[1] * xgb_m.predict_proba(X) +
                  weights[2] * cb_m.predict_proba(X))

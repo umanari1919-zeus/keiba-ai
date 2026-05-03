@@ -86,27 +86,37 @@ def _parse_odds_page(page) -> Dict[str, Dict]:
     return result
 
 
-def scrape_race_odds(race_id: str, page) -> Dict:
+def scrape_race_odds(race_id: str, page, max_retries: int = 2) -> Dict:
     """
     1レースのオッズを Playwright で取得して返す。
     page: 呼び出し元で生成済みの playwright Page オブジェクト
+    - wait_until='domcontentloaded' で networkidle タイムアウトを回避
+    - タイムアウト 45秒 + 最大2回リトライ
     """
     url = f"https://race.netkeiba.com/odds/index.html?race_id={race_id}"
-    try:
-        page.goto(url, wait_until='networkidle', timeout=25000)
-        odds = _parse_odds_page(page)
-
-        # レース名・競馬場名をタイトルから取得
-        title = page.title()
-        return {
-            'race_id':   race_id,
-            'title':     title,
-            'timestamp': datetime.now().isoformat(),
-            'horses':    odds,
-            'n_horses':  len(odds),
-        }
-    except Exception as e:
-        return {'race_id': race_id, 'error': str(e), 'horses': {}}
+    last_err = None
+    for attempt in range(max_retries + 1):
+        try:
+            page.goto(url, wait_until='domcontentloaded', timeout=45000)
+            # オッズテーブルが描画されるまで最大5秒待機
+            try:
+                page.wait_for_selector('table.Odds', timeout=5000)
+            except Exception:
+                pass  # テーブルなしでも続行
+            odds = _parse_odds_page(page)
+            title = page.title()
+            return {
+                'race_id':   race_id,
+                'title':     title,
+                'timestamp': datetime.now().isoformat(),
+                'horses':    odds,
+                'n_horses':  len(odds),
+            }
+        except Exception as e:
+            last_err = e
+            if attempt < max_retries:
+                time.sleep(2)  # リトライ前に2秒待機
+    return {'race_id': race_id, 'error': str(last_err), 'horses': {}}
 
 
 # ─────────────────────────────────────────────────────────────

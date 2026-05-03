@@ -1,0 +1,15 @@
+import psycopg2
+conn=psycopg2.connect(host="localhost",port=5433,dbname="mykeibadb",user="postgres",password="")
+cur=conn.cursor()
+cur.execute("""
+SELECT table_schema, table_name 
+FROM information_schema.tables 
+WHERE table_schema NOT IN ('pg_catalog','information_schema')
+ORDER BY table_schema, table_name
+""")
+rows=cur.fetchall()
+print(f"テーブル数: {len(rows)}")
+for r in rows:
+    print(f"  {r[0]}.{r[1]}")
+cur.close()
+conn.close()

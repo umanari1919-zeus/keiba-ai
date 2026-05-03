@@ -362,9 +362,10 @@ def run_nicks_analysis(year_from: int = 2018, top_n: int = 30):
     try:
         import pandas as pd
         sim = pd.read_csv("D:\\keiba_ai\\simulation_2025.csv",
-                          encoding="utf-8-sig")
+                          encoding="utf-8-sig", on_bad_lines="skip")
         feat_df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
                               encoding="utf-8-sig", low_memory=False,
+                              on_bad_lines="skip",
                               usecols=["race_code","bamei","chichi"])
         feat_df["race_code"] = feat_df["race_code"].astype(str)
         sim["race_code"]     = sim["race_code"].astype(str)

@@ -1,0 +1,5 @@
+2026-05-03 09:22:01,974 [INFO] === normalize ステージ開始 trace=182e0395-e402-48bd-8ede-29fd84e947b5 ===
+2026-05-03 09:22:03,545 [INFO] [AUDIT] start agent=normalizer-agent run_tag=run_20260503_203478ae
+2026-05-03 09:22:03,545 [INFO] [DRY-RUN] normalizer-agent - 実行をスキップ
+2026-05-03 09:22:03,596 [INFO] [AUDIT] success agent=normalizer-agent run_tag=run_20260503_203478ae
+2026-05-03 09:22:03,596 [INFO] normalize 完了: rows=None mismatch_rate=None quarantined=False

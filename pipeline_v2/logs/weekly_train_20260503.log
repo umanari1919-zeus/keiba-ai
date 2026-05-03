@@ -1,0 +1,7 @@
+2026-05-03 18:43:58,163 [INFO] === weekly_train ステージ開始 trace=ce2d1902-3370-4e94-a868-5ce4407025f4 ===
+2026-05-03 18:43:58,446 [INFO] [AUDIT] start agent=train-agent run_tag=run_20260503_b3658bac
+2026-05-03 18:43:58,446 [INFO] [train-agent] skip_train=True: 学習をスキップし既存 pkl を使用
+2026-05-03 18:43:58,447 [WARNING] model_v8.pkl が見つかりません。空メトリクスを返します。
+2026-05-03 18:43:58,496 [INFO] [train-agent] model_registry 登録: model_v8_20260503_184358 (旧モデル 1 件を retired)
+2026-05-03 18:43:58,543 [INFO] [AUDIT] success agent=train-agent run_tag=run_20260503_b3658bac
+2026-05-03 18:43:58,543 [INFO] weekly_train 完了: model_id=model_v8_20260503_184358 ensemble_acc=N/A val_acc=N/A

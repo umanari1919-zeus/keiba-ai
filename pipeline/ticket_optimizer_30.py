@@ -170,6 +170,21 @@ def calc_all_ticket_ev(candidates: List[Dict], n_horses: int) -> Dict[str, Dict]
     return results
 
 
+def _ticket_reason(ticket_key: str, ticket: Dict, candidates: List[Dict]) -> str:
+    names = " / ".join(ticket.get("horses", [])[:3])
+    if ticket_key == "tansho":
+        return f"本命の単勝期待値が最も高い: {names}"
+    if ticket_key == "fukusho":
+        return f"安定重視。{names} の複勝期待値が優位"
+    if ticket_key == "umaren":
+        return f"上位2頭の組み合わせが強い: {names}"
+    if ticket_key == "wide":
+        return f"2頭の同時好走を狙う: {names}"
+    if ticket_key == "sanrenfuku":
+        return f"3頭の着順ズレを拾う: {names}"
+    return names
+
+
 # 単勝は直接確率精度が乗るので補正ボーナス
 _TANSHO_BONUS = 0.02
 
@@ -201,9 +216,15 @@ def select_optimal_ticket(candidates: List[Dict], bankroll: float,
     else:
         bet = 100
 
+    reason = _ticket_reason(best_key, best, candidates)
+    score = scores.get(best_key, best.get('ev', -1.0))
+
     return {
         **best,
         'ticket_key':      best_key,
+        'ticket_label':    best.get('ticket_type', best_key),
+        'reason':          reason,
+        'score':           score,
         'race_code':       race_code,
         'recommended_bet': bet,
         'all_ev': {k: round(v['ev'] * 100, 1) for k, v in ev_map.items()},
@@ -244,25 +265,32 @@ def run_ticket_optimizer(year: int = None, bankroll: float = None) -> dict:
         return {}
 
     recommendations = []
-    for rc, race_df in list(df.groupby('race_code'))[:30]:
+    for rc, race_df in df.groupby('race_code'):
         n_h = len(race_df)
         candidates = []
         for _, row in race_df.iterrows():
             odds = float(row.get('tansho_odds', 0)) / 10
             wp   = float(row.get('win_probability', 0))
-            if odds < 5.0 or wp <= 0:
+            ev = wp * odds - 1.0
+            if odds < 5.0 or wp <= 0 or ev < 0.05:
                 continue
             candidates.append({
                 'bamei':           str(row.get('bamei', '')),
                 'odds':            odds,
                 'win_probability': wp,
-                'expected_value':  wp * odds - 1.0,
+                'expected_value':  ev,
             })
         if not candidates:
             continue
         rec = select_optimal_ticket(candidates, bankroll, str(rc), n_h)
-        if rec:
+        if rec and rec.get('ev', -1.0) >= 0.05:
             recommendations.append(rec)
+
+    recommendations = sorted(
+        recommendations,
+        key=lambda x: (float(x.get('score', -1.0)), float(x.get('ev', -1.0))),
+        reverse=True,
+    )
 
     dist = Counter(r.get('ticket_type', '?') for r in recommendations)
     if recommendations:
@@ -277,6 +305,25 @@ def run_ticket_optimizer(year: int = None, bankroll: float = None) -> dict:
     with open(out_path, 'w', encoding='utf-8') as f:
         json.dump(recommendations[:50], f, ensure_ascii=False, indent=2, default=str)
     print(f"\n  💾 保存: {out_path}")
+
+    md_path = f"{BASE_DIR}\\data\\ticket_recommendations_{year}.md"
+    with open(md_path, 'w', encoding='utf-8') as f:
+        f.write(f"# {year}年 馬券推薦サマリー\n\n")
+        f.write(f"- 分析R数: {len(recommendations)}\n")
+        f.write(f"- 現在資金: {bankroll:,.0f}円\n\n")
+        f.write("| レース | 推奨馬券 | 本命 | 相手 | 推定オッズ | 期待値 | 推奨金額 | 理由 |\n")
+        f.write("|---|---|---|---|---:|---:|---:|---|\n")
+        for r in recommendations[:30]:
+            horses = r.get("horses", [])
+            top = horses[0] if horses else "-"
+            second = horses[1] if len(horses) > 1 else "-"
+            third = horses[2] if len(horses) > 2 else "-"
+            f.write(
+                f"| {r.get('race_code','-')} | {r.get('ticket_label', r.get('ticket_type','-'))} | "
+                f"{top} | {second} / {third} | {r.get('est_odds', 0):.1f} | "
+                f"{r.get('ev', 0)*100:+.1f}% | {r.get('recommended_bet', 0):,}円 | {r.get('reason','')} |\n"
+            )
+    print(f"  📝 保存: {md_path}")
 
     return {'n_analyzed': len(recommendations), 'dist': dict(dist)}
 

@@ -15,14 +15,17 @@ MIN_BETS_FOR_ALERT = 5  # アラートを出す最低ベット数
 
 COLS = [
     'date', 'race_code', 'bamei', 'bet_type',
-    'bet_amount', 'odds', 'hit', 'return_amount', 'profit'
+    'bet_amount', 'odds', 'hit', 'return_amount', 'profit', 'race_type'
 ]
 
 
 def _load():
     if os.path.exists(TRACKER_FILE):
-        return pd.read_csv(TRACKER_FILE, encoding="utf-8-sig",
-                           dtype={'race_code': str})
+        df = pd.read_csv(TRACKER_FILE, encoding="utf-8-sig",
+                         dtype={'race_code': str})
+        if 'race_type' not in df.columns:
+            df['race_type'] = 'default'
+        return df
     os.makedirs(os.path.dirname(TRACKER_FILE), exist_ok=True)
     return pd.DataFrame(columns=COLS)
 
@@ -32,7 +35,7 @@ def _save(df):
     df.to_csv(TRACKER_FILE, index=False, encoding="utf-8-sig")
 
 
-def record_bet(race_code, bamei, bet_type, bet_amount, odds, hit):
+def record_bet(race_code, bamei, bet_type, bet_amount, odds, hit, race_type='default'):
     """
     賭け結果を1件記録する。
 
@@ -58,7 +61,8 @@ def record_bet(race_code, bamei, bet_type, bet_amount, odds, hit):
         'odds':          odds,
         'hit':           int(hit),
         'return_amount': return_amount,
-        'profit':        profit
+        'profit':        profit,
+        'race_type':     race_type,
     }
     df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
     _save(df)
@@ -210,12 +214,101 @@ def print_roi_report():
     print(f"{'='*60}")
 
 
+    # race_type breakdown
+    if 'race_type' in df.columns and len(df) >= 5:
+        valid_rt = df[df['hit'] != -1]
+        if len(valid_rt) > 0 and valid_rt['race_type'].nunique() > 0:
+            print(f"\n[\u30ec\u30fc\u30b9\u7a2e\u5225\u6210\u7e3e\uff08\u7d2f\u8a08\uff09]")
+            _type_labels = {
+                'debut':    '\u65b0\u99ac\u6226',
+                'shogai':   '\u969c\u5bb3\u6226',
+                'handicap': '\u30cf\u30f3\u30c7\u6226',
+                'default':  '\u901a\u5e38\u6226',
+            }
+            for _rt, _g in valid_rt.groupby('race_type'):
+                _lbl  = _type_labels.get(_rt, _rt)
+                _bet  = _g['bet_amount'].sum()
+                _ret  = _g['return_amount'].sum()
+                _hits = (_g['hit'] == 1).sum()
+                _roi  = _ret / _bet * 100 if _bet > 0 else 0
+                print(f"   {_lbl:<6}: {len(_g):>4}R  "
+                      f"\u7684\u4e2d\u7387{_hits/len(_g)*100:>5.1f}%  "
+                      f"\u56de\u53ce\u7387{_roi:>6.1f}%  "
+                      f"\u640d\u76ca{_ret-_bet:>+9,.0f}\u5186")
+
+    # bankroll.json を roi_tracker の実績で自動更新
+    _sync_bankroll(df)
+
+
+def _sync_bankroll(df=None):
+    """
+    roi_tracker.csv の実績から bankroll.json を自動更新する。
+    run_all.py の print_roi_report 呼び出し後に自動実行される。
+    """
+    import json as _json
+    from datetime import datetime as _dt
+
+    if df is None:
+        df = _load()
+    if len(df) == 0:
+        return
+
+    INITIAL = 10000
+    total_profit = float(df['profit'].sum())
+    current = INITIAL + total_profit
+
+    # 月次履歴
+    df2 = df.copy()
+    df2['_date'] = pd.to_datetime(df2['date'], errors='coerce')
+    df2['_month'] = df2['_date'].dt.strftime('%Y-%m')
+    monthly = df2.groupby('_month').agg(
+        profit=('profit', 'sum'),
+        bets=('bet_amount', 'count'),
+        hits=('hit', 'sum'),
+        invested=('bet_amount', 'sum'),
+        returned=('return_amount', 'sum')
+    ).reset_index()
+
+    history = []
+    running = INITIAL
+    for _, row in monthly.iterrows():
+        running += float(row['profit'])
+        bets = int(row['bets'])
+        history.append({
+            'month':    row['_month'],
+            'profit':   round(float(row['profit']), 0),
+            'balance':  round(running, 0),
+            'hit_rate': round(float(row['hits']) / bets * 100, 1) if bets else 0,
+            'roi':      round(float(row['returned']) / float(row['invested']) * 100, 1)
+                        if float(row['invested']) > 0 else 0,
+            'bets':     bets,
+        })
+
+    total_invested = float(df['bet_amount'].sum())
+    total_returned = float(df['return_amount'].sum())
+    result = {
+        'initial':      INITIAL,
+        'current':      round(current, 0),
+        'total_profit': round(total_profit, 0),
+        'total_roi':    round(total_returned / total_invested * 100, 1)
+                        if total_invested > 0 else 0,
+        'total_bets':   len(df),
+        'hit_rate':     round(float(df['hit'].mean()) * 100, 1),
+        'history':      history,
+        'updated':      _dt.now().isoformat(),
+    }
+    bk_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'bankroll.json')
+    bk_path = os.path.normpath(bk_path)
+    with open(bk_path, 'w', encoding='utf-8') as f:
+        _json.dump(result, f, ensure_ascii=False, indent=2)
+
+
 def import_from_simulation(simulation_csv, year=2025):
     """
     既存の simulation_2025.csv から過去データを一括インポートする。
     初回セットアップ用。
     """
-    df = pd.read_csv(simulation_csv, encoding="utf-8-sig")
+    df = pd.read_csv(simulation_csv, encoding="utf-8-sig", on_bad_lines="skip")
     print(f"📥 {len(df)}件のシミュレーション結果をインポート中...")
 
     imported = 0

@@ -1,0 +1,12 @@
+{
+  "job_id": "upsetscore_daily_v1",
+  "schedule": "cron: 0 5 * * *",
+  "weights": {
+    "avg_gap": 0.45,
+    "odds_std": 0.15,
+    "one_minus_top3_prob": 0.2,
+    "pace_mismatch": 0.1,
+    "shock_score": 0.1
+  },
+  "output_table": "race_metrics.upset_scores"
+}

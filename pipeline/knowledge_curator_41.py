@@ -66,6 +66,56 @@ CAT_LABELS = {
 # EV boost マッピング（confidence × この値 = boost額）
 BOOST_SCALE = 0.08
 
+_CONDITION_KEY_ALIASES = {
+    "baba": "baba_jotai",
+    "baba_jotai_code": "baba_jotai",
+    "kishu": "kishu_code",
+    "jockey": "kishu_code",
+    "keibajo": "keibajo_code",
+    "track": "track_code",
+    "style": "kyakushitsu",
+    "kyakushitsu_hantei": "kyakushitsu",
+    "dist": "dist_cat",
+}
+
+_KYAKUSHITSU_ALIASES = {
+    "逃げ": "1",
+    "先行": "2",
+    "差し": "3",
+    "追込": "4",
+    "nige": "1",
+    "senko": "2",
+    "sashi": "3",
+    "oikomi": "4",
+}
+
+_KEY_LABELS = {
+    "chichi": "父馬",
+    "baba_jotai": "馬場",
+    "keibajo_code": "競馬場",
+    "kyakushitsu": "脚質",
+    "dist_cat": "距離",
+    "month": "月",
+    "barei": "馬齢",
+    "ninki": "人気",
+    "ninki_min": "人気下限",
+    "ninki_max": "人気上限",
+    "weight_change": "体重変化",
+    "kishu_code": "騎手",
+    "track_code": "トラック",
+    "is_debut": "新馬フラグ",
+    "debut_score_min": "新馬スコア下限",
+    "jockey_debut_win_rate_min": "新馬騎手下限",
+    "trainer_debut_win_rate_min": "新馬調教師下限",
+    "sire_debut_win_rate_min": "新馬父馬下限",
+    "training_score_v2_min": "調教スコア下限",
+    "is_shogai": "障害フラグ",
+    "shogai_score_min": "障害スコア下限",
+    "shogai_keiken_min": "障害経験下限",
+    "jockey_shogai_win_rate_min": "障害騎手下限",
+    "trainer_shogai_win_rate_min": "障害調教師下限",
+}
+
 
 # ─────────────────────────────────────────────────────────────
 # ストレージ管理
@@ -85,7 +135,10 @@ class KnowledgeStore:
         if not os.path.exists(LATEST):
             return {}
         with open(LATEST, encoding="utf-8") as f:
-            return json.load(f)
+            state = json.load(f)
+        for item_id, item in state.items():
+            _ensure_item_schema(item, item_id=item_id)
+        return state
 
     def _today_event_path(self) -> str:
         return os.path.join(EVT_DIR, f"{datetime.now().strftime('%Y%m%d')}.jsonl")
@@ -109,6 +162,8 @@ class KnowledgeStore:
         if snaps:
             with open(os.path.join(SNAP_DIR, snaps[-1]), encoding="utf-8") as f:
                 state: Dict[str, Dict] = json.load(f)
+            for item_id, item in state.items():
+                _ensure_item_schema(item, item_id=item_id)
             snap_date = snaps[-1][2:10]  # vXXX_YYYYMMDD.json
         else:
             state = {}
@@ -168,7 +223,7 @@ def _apply_event(state: Dict[str, Dict], evt: Dict) -> Dict[str, Dict]:
 
     if etype == "CREATE":
         if item_id not in state:
-            state[item_id] = evt["data"]
+            state[item_id] = _ensure_item_schema(evt["data"], item_id=item_id)
     elif etype == "CONFIRM":
         if item_id in state:
             item = state[item_id]
@@ -181,6 +236,7 @@ def _apply_event(state: Dict[str, Dict], evt: Dict) -> Dict[str, Dict]:
             if rc and rc not in item.get("evidence_race_codes", []):
                 item.setdefault("evidence_race_codes", []).append(rc)
             item["last_verified"] = evt.get("timestamp", "")[:10]
+            _ensure_item_schema(item, item_id=item_id)
     elif etype == "REFUTE":
         if item_id in state:
             item = state[item_id]
@@ -191,6 +247,7 @@ def _apply_event(state: Dict[str, Dict], evt: Dict) -> Dict[str, Dict]:
             item["sample_count"] = item.get("sample_count", 0) + 1
             if item["confidence"] < CONF_DEPRECATE:
                 item["status"] = "deprecated"
+            _ensure_item_schema(item, item_id=item_id)
     elif etype == "DEPRECATE":
         if item_id in state:
             state[item_id]["status"] = "deprecated"
@@ -209,11 +266,135 @@ def _apply_event(state: Dict[str, Dict], evt: Dict) -> Dict[str, Dict]:
                 dst.get("evidence_race_codes", []) +
                 src.get("evidence_race_codes", [])
             ))
+            _ensure_item_schema(dst, item_id=item_id)
     elif etype == "UPDATE_STATUS":
         if item_id in state:
             state[item_id]["status"] = evt.get("status", "active")
 
     return state
+
+
+def _normalize_scalar_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (float, np.floating)) and pd.isna(value):
+        return ""
+    if isinstance(value, (int, np.integer)):
+        return str(int(value))
+    if isinstance(value, (float, np.floating)):
+        if float(value).is_integer():
+            return str(int(value))
+        return f"{float(value):g}"
+    return str(value).strip()
+
+
+def _normalize_condition_value(key: str, value: Any) -> Any:
+    if isinstance(value, dict):
+        return _normalize_condition_dict(value)
+    if isinstance(value, (list, tuple, set)):
+        cleaned = [_normalize_condition_value(key, v) for v in value]
+        cleaned = [v for v in cleaned if v not in ("", None, {}, [])]
+        return sorted(dict.fromkeys(cleaned))
+
+    key = _CONDITION_KEY_ALIASES.get(str(key).strip(), str(key).strip())
+    text = _normalize_scalar_text(value)
+    if not text:
+        return ""
+
+    if key == "kyakushitsu":
+        return _KYAKUSHITSU_ALIASES.get(text, text)
+    if key == "keibajo_code" and text.isdigit() and len(text) == 1:
+        return text.zfill(2)
+    if key in {"month", "barei", "ninki", "ninki_min", "ninki_max"} and text.isdigit():
+        return str(int(text))
+    return text
+
+
+def _normalize_condition_dict(cond: Dict[str, Any]) -> Dict[str, Any]:
+    if not cond:
+        return {}
+    normalized: Dict[str, Any] = {}
+    for raw_key, raw_value in cond.items():
+        key = _CONDITION_KEY_ALIASES.get(str(raw_key).strip(), str(raw_key).strip())
+        value = _normalize_condition_value(key, raw_value)
+        if value in ("", None, {}, []):
+            continue
+        normalized[key] = value
+    return dict(sorted(normalized.items(), key=lambda kv: kv[0]))
+
+
+def _condition_signature(category: str, cond: Dict[str, Any]) -> str:
+    payload = {
+        "category": category or "",
+        "condition": _normalize_condition_dict(cond),
+    }
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _condition_summary(cond: Dict[str, Any]) -> str:
+    if not cond:
+        return "条件なし"
+    parts = []
+    for key, value in _normalize_condition_dict(cond).items():
+        label = _KEY_LABELS.get(key, key)
+        if isinstance(value, list):
+            text = "・".join(map(str, value))
+        elif isinstance(value, dict):
+            text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        else:
+            text = str(value)
+        parts.append(f"{label}={text}")
+    return " / ".join(parts)
+
+
+def _ensure_item_schema(item: Dict[str, Any], item_id: str = "") -> Dict[str, Any]:
+    item.setdefault("id", item_id)
+    item["category"] = item.get("category", "MKT")
+    item["status"] = item.get("status", "active")
+    item["condition"] = _normalize_condition_dict(item.get("condition", {}))
+    item["condition_norm"] = item["condition"]
+    item["condition_key"] = _condition_signature(item["category"], item["condition"])
+    item["condition_summary"] = _condition_summary(item["condition"])
+    item.setdefault("claim", "")
+    metrics = item.get("metrics") or {}
+    if not isinstance(metrics, dict):
+        metrics = {"estimated_lift": 1.0}
+    metrics["estimated_lift"] = float(metrics.get("estimated_lift", 1.0) or 1.0)
+    item["metrics"] = metrics
+    item["confidence"] = float(item.get("confidence", 0.5) or 0.5)
+    item["alpha"] = int(item.get("alpha", 2) or 2)
+    item["beta"] = int(item.get("beta", 2) or 2)
+    item["sample_count"] = int(item.get("sample_count", 0) or 0)
+    item["evidence_race_codes"] = list(dict.fromkeys(item.get("evidence_race_codes", []) or []))
+    item["version_created"] = item.get("version_created", "")
+    item["version_modified"] = item.get("version_modified", item["version_created"])
+    item["created_at"] = item.get("created_at", datetime.now().strftime("%Y-%m-%d"))
+    item["last_verified"] = item.get("last_verified", item["created_at"])
+    item.setdefault("source", "unknown")
+    return item
+
+
+def _derive_weight_change(row: Dict[str, Any]) -> str:
+    fugo = _normalize_scalar_text(row.get("zogen_fugo", ""))
+    sa = _normalize_scalar_text(row.get("zogen_sa", ""))
+    if not sa.isdigit():
+        return ""
+    kg = int(sa)
+    if fugo == "1":
+        if kg >= 10:
+            return "大幅増（+10kg以上）"
+        if kg >= 2:
+            return "微増（+2〜9kg）"
+        return "同体重"
+    if fugo == "2":
+        if kg >= 10:
+            return "大幅減（-10kg以上）"
+        if kg >= 2:
+            return "微減（-2〜9kg）"
+        return "同体重"
+    if fugo == "0":
+        return "同体重"
+    return ""
 
 
 # ─────────────────────────────────────────────────────────────
@@ -234,6 +415,9 @@ def fetch_recent_results(days: int = 7) -> List[Dict]:
                 u.chakujun,
                 u.tansho_odds,
                 u.ninki,
+                r.kyoso_joken_code_2sai,
+                r.kyoso_shubetsu_code,
+                r.keibajo_code,
                 r.track_code,
                 r.kyori,
                 r.baba_jotai_code,
@@ -257,6 +441,9 @@ def fetch_recent_results(days: int = 7) -> List[Dict]:
             results.append({
                 "race_code":       str(rc),
                 "n_horses":        len(grp),
+                "is_debut":        1 if str(winner.get("kyoso_joken_code_2sai", "")) == "701" else 0,
+                "is_shogai":       1 if str(winner.get("kyoso_shubetsu_code", "")) in ("18", "19") else 0,
+                "keibajo_code":    str(winner.get("keibajo_code", "")),
                 "track_code":      str(winner.get("track_code", "")),
                 "kyori":           int(winner.get("kyori", 0) or 0),
                 "baba_jotai":      str(winner.get("baba_jotai_code", "")),
@@ -338,7 +525,33 @@ TRN=調教シグナル, SEA=季節パターン, DBT=新馬戦, SHG=障害戦
 }"""
 
 
+def _call_ollama_curator(user_msg: str, system: str = "",
+                         temperature: float = 0.3) -> Optional[str]:
+    """Ollama でテキスト生成（知識抽出・JSON出力用、stream=False）。失敗時はNone。"""
+    try:
+        from pipeline.ollama_comment import is_ollama_running, get_model_for_task, _generate
+        if not is_ollama_running():
+            return None
+        # 知識抽出・重複判定・JSON出力 → "json" プロファイル（deepseek-r1/phi4 優先）
+        model = get_model_for_task("json")
+        if not model:
+            return None
+        result = _generate(user_msg, system=system or _EXTRACT_SYSTEM,
+                           model=model, temperature=temperature,
+                           stream=False, task="json")
+        return result or None
+    except Exception as e:
+        print(f"  [knowledge_curator/Ollama] スキップ: {e}")
+        return None
+
+
 def _call_haiku(user_msg: str, max_tokens: int = 500) -> Optional[str]:
+    """Ollama優先 → Claude Haiku フォールバック。"""
+    # 1. Ollama（無料・ローカル）
+    result = _call_ollama_curator(user_msg, system=_EXTRACT_SYSTEM)
+    if result:
+        return result
+    # 2. Claude Haiku API（有料）
     if not _ANTHROPIC_KEY:
         return None
     try:
@@ -440,13 +653,15 @@ def extract_insights_template(races: List[Dict]) -> List[Dict]:
 
 def _condition_overlap(c1: Dict, c2: Dict) -> float:
     """2条件のオーバーラップ率（0〜1）"""
-    if not c1 or not c2:
+    n1 = _normalize_condition_dict(c1)
+    n2 = _normalize_condition_dict(c2)
+    if not n1 or not n2:
         return 0.0
-    keys1, keys2 = set(c1.keys()), set(c2.keys())
+    keys1, keys2 = set(n1.keys()), set(n2.keys())
     common = keys1 & keys2
     if not common:
         return 0.0
-    match = sum(1 for k in common if str(c1[k]) == str(c2[k]))
+    match = sum(1 for k in common if n1[k] == n2[k])
     return match / len(keys1 | keys2)
 
 
@@ -463,11 +678,20 @@ def deduplicate_and_assign(
     """
     creates, confirms, merges = [], [], []
     active = {k: v for k, v in existing.items() if v.get("status") == "active"}
+    indexed: Dict[Tuple[str, str], str] = {}
+    for eid, eitem in active.items():
+        category = eitem.get("category", "")
+        indexed[(category, _condition_signature(category, eitem.get("condition", {})))] = eid
 
     for ins in new_insights:
         best_id, best_score = None, 0.0
+        ins = _ensure_item_schema(dict(ins))
         cond_new = ins.get("condition", {})
         cat_new  = ins.get("category", "")
+        exact_id = indexed.get((cat_new, _condition_signature(cat_new, cond_new)))
+        if exact_id:
+            confirms.append((exact_id, "batch_extract"))
+            continue
 
         for eid, eitem in active.items():
             if eitem.get("category") != cat_new:
@@ -495,31 +719,42 @@ def resolve_merge_with_llm(
     overlap_score: float,
 ) -> str:
     """
-    部分重複（0.4〜0.7）の知見をHaikuで判定。
+    部分重複（0.4〜0.7）の知見をLLMで判定（Ollama優先 → Claude Haiku → デフォルト）。
     Returns: "merge" | "create" | "skip"
     """
+    _merge_system = (
+        "競馬知見の重複判定エージェントです。"
+        "2つの知見を比較し、'merge'/'create'/'skip' の1語のみを返してください。"
+    )
+    prompt = (
+        "以下の2つの競馬知見を比較して、どう扱うべきか判定してください。\n\n"
+        "【新規抽出された知見】\n"
+        "カテゴリ: " + str(new_ins.get('category')) + "\n"
+        "条件: " + json.dumps(new_ins.get('condition', {}), ensure_ascii=False) + "\n"
+        "主張: " + str(new_ins.get('claim')) + "\n\n"
+        "【既存の知見】\n"
+        "カテゴリ: " + str(existing_item.get('category')) + "\n"
+        "条件: " + json.dumps(existing_item.get('condition', {}), ensure_ascii=False) + "\n"
+        "主張: " + str(existing_item.get('claim')) + "\n"
+        "信頼度: " + str(round(existing_item.get('confidence', 0), 2)) +
+        " サンプル数: " + str(existing_item.get('sample_count', 0)) + "\n\n"
+        "オーバーラップスコア: " + str(round(overlap_score, 2)) + "\n\n"
+        "以下のいずれか1語のみ返してください:\n"
+        "- merge  : 同じ現象を指しており、既存に統合すべき\n"
+        "- create : 異なる現象であり、新規知見として追加すべき\n"
+        "- skip   : 既存の方が詳細・正確であり、新規は不要"
+    )
+
+    # 1. Ollama（無料）
+    ollama_resp = _call_ollama_curator(prompt, system=_merge_system, temperature=0.1)
+    if ollama_resp:
+        v = ollama_resp.strip().lower().split()[0] if ollama_resp.strip() else ""
+        if v in ("merge", "create", "skip"):
+            return v
+
+    # 2. Claude Haiku（有料フォールバック）
     if not _ANTHROPIC_KEY:
-        return "create"  # APIなし → デフォルト新規作成
-
-    prompt = f"""以下の2つの競馬知見を比較して、どう扱うべきか判定してください。
-
-【新規抽出された知見】
-カテゴリ: {new_ins.get('category')}
-条件: {json.dumps(new_ins.get('condition', {}), ensure_ascii=False)}
-主張: {new_ins.get('claim')}
-
-【既存の知見】
-カテゴリ: {existing_item.get('category')}
-条件: {json.dumps(existing_item.get('condition', {}), ensure_ascii=False)}
-主張: {existing_item.get('claim')}
-信頼度: {existing_item.get('confidence', 0):.2f}（サンプル数: {existing_item.get('sample_count', 0)}）
-
-オーバーラップスコア: {overlap_score:.2f}
-
-以下のいずれか1語のみ返してください:
-- merge  : 同じ現象を指しており、既存に統合すべき
-- create : 異なる現象であり、新規知見として追加すべき
-- skip   : 既存の方が詳細・正確であり、新規は不要"""
+        return "create"
 
     try:
         import anthropic
@@ -539,7 +774,7 @@ def resolve_merge_with_llm(
 
 def _new_item(ins: Dict, version: str) -> Dict:
     """知見辞書から知識ベースエントリを生成"""
-    return {
+    item = {
         "id":                  "",  # 後でセット
         "category":            ins.get("category", "MKT"),
         "status":              "active",
@@ -557,7 +792,9 @@ def _new_item(ins: Dict, version: str) -> Dict:
         "version_modified":    version,
         "created_at":          datetime.now().strftime("%Y-%m-%d"),
         "last_verified":       datetime.now().strftime("%Y-%m-%d"),
+        "source":              ins.get("source", "unknown"),
     }
+    return _ensure_item_schema(item)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -578,11 +815,17 @@ def verify_existing_items(
         rc = race.get("race_code", "")
         winner_odds = race.get("winner_odds", 0)
         winner_ninki = race.get("winner_ninki", 99)
+        winner_baba = str(race.get("baba_jotai", ""))
+        winner_keibajo = str(race.get("keibajo_code", ""))
+        winner_track = str(race.get("track_code", ""))
+        winner_kyori = float(race.get("kyori", 0) or 0)
+        winner_kishu = str(race.get("winner_kishu", ""))
+        race_month = str(rc)[4:6].lstrip("0") if len(str(rc)) >= 6 else ""
 
         for item_id, item in state.items():
             if item.get("status") != "active":
                 continue
-            cond = item.get("condition", {})
+            cond = _normalize_condition_dict(item.get("condition", {}))
             cat  = item.get("category", "")
 
             matched = False
@@ -594,6 +837,37 @@ def verify_existing_items(
                     if winner_ninki >= thresh:
                         matched = True
                         confirmed = True  # 穴が勝った = 知見確認
+                elif "ninki" in cond and str(winner_ninki) == str(cond["ninki"]):
+                    matched = True
+                    confirmed = True
+            elif cat == "BLD":
+                if "baba_jotai" in cond and winner_baba == str(cond["baba_jotai"]):
+                    matched = True
+                    confirmed = True
+            elif cat == "JKY":
+                if "kishu_code" in cond and winner_kishu == str(cond["kishu_code"]):
+                    matched = True
+                    confirmed = True
+            elif cat == "TRK":
+                if "keibajo_code" in cond and winner_track == str(cond["keibajo_code"]):
+                    matched = True
+                    confirmed = True
+                if "keibajo_code" in cond and winner_keibajo == str(cond["keibajo_code"]):
+                    matched = True
+                    confirmed = True
+                if "dist_cat" in cond:
+                    dist = "短距離" if winner_kyori <= 1400 else "中距離" if winner_kyori <= 2000 else "長距離"
+                    if dist == str(cond["dist_cat"]):
+                        matched = True
+                        confirmed = True
+            elif cat == "SEA":
+                if "month" in cond and race_month == str(cond["month"]):
+                    matched = True
+                    confirmed = True
+            elif cat == "TRN":
+                if "weight_change" in cond and _derive_weight_change(race) == str(cond["weight_change"]):
+                    matched = True
+                    confirmed = True
 
             # 条件一致した場合のみ更新
             if matched:
@@ -659,31 +933,141 @@ def apply_knowledge_to_features(state: Dict[str, Dict]):
     df = pd.read_csv(FEAT_FILE, on_bad_lines="skip", low_memory=False)
     added = 0
 
+    def _series_text(series: pd.Series) -> pd.Series:
+        return series.fillna("").astype(str).str.strip()
+
+    def _dist_series(frame: pd.DataFrame) -> pd.Series:
+        if "kyori" not in frame.columns:
+            return pd.Series([""] * len(frame), index=frame.index)
+        ky = pd.to_numeric(frame["kyori"], errors="coerce").fillna(0)
+        return pd.Series(np.where(
+            ky <= 1400, "短距離",
+            np.where(ky <= 2000, "中距離", "長距離")
+        ), index=frame.index)
+
     for item in medium_items:
         item_id  = item.get("id", "")
         cat      = item.get("category", "")
-        cond     = item.get("condition", {})
+        cond     = _normalize_condition_dict(item.get("condition", {}))
         col_name = f"kb_{cat.lower()}_{item_id.lower()}_flag"
 
         if col_name in df.columns:
             continue  # 既存列はスキップ
 
-        flag_series = pd.Series(0, index=df.index)
+        flag_mask = pd.Series(True, index=df.index)
+        used_condition = False
 
         # 条件別フラグ生成（ルールベース）
         if cat == "MKT" and "winner_ninki_min" in cond:
             pass  # レース後情報なので特徴量化できない
 
-        elif cat == "BLD" and "chichi" in cond and "chichi" in df.columns:
-            flag_series = (df["chichi"] == cond["chichi"]).astype(int)
-            if "track_surface" in cond and "track_surface" in df.columns:
-                surfaces = cond["track_surface"]
-                flag_series &= df["track_surface"].isin(surfaces).astype(int)
+        elif cat == "BLD":
+            if "chichi" in cond and "chichi" in df.columns:
+                flag_mask &= _series_text(df["chichi"]) == str(cond["chichi"])
+                used_condition = True
+            if "baba_jotai" in cond and "baba_jotai" in df.columns:
+                flag_mask &= _series_text(df["baba_jotai"]) == str(cond["baba_jotai"])
+                used_condition = True
+            if "keibajo_code" in cond and "keibajo_code" in df.columns:
+                flag_mask &= _series_text(df["keibajo_code"]) == str(cond["keibajo_code"])
+                used_condition = True
+            if "dist_cat" in cond:
+                flag_mask &= _dist_series(df) == str(cond["dist_cat"])
+                used_condition = True
 
-        elif cat == "JKY" and "kishu_code" in cond and "kishu_code" in df.columns:
-            flag_series = (df["kishu_code"].astype(str) == str(cond["kishu_code"])).astype(int)
+        elif cat == "JKY":
+            if "kishu_code" in cond and "kishu_code" in df.columns:
+                flag_mask &= _series_text(df["kishu_code"]) == str(cond["kishu_code"])
+                used_condition = True
+            if "keibajo_code" in cond and "keibajo_code" in df.columns:
+                flag_mask &= _series_text(df["keibajo_code"]) == str(cond["keibajo_code"])
+                used_condition = True
+            if "dist_cat" in cond:
+                flag_mask &= _dist_series(df) == str(cond["dist_cat"])
+                used_condition = True
 
-        if flag_series.sum() > 0:
+        elif cat == "TRK":
+            if "keibajo_code" in cond and "keibajo_code" in df.columns:
+                flag_mask &= _series_text(df["keibajo_code"]) == str(cond["keibajo_code"])
+                used_condition = True
+            if "kyakushitsu" in cond and "kyakushitsu_hantei" in df.columns:
+                flag_mask &= _series_text(df["kyakushitsu_hantei"]) == str(cond["kyakushitsu"])
+                used_condition = True
+            if "dist_cat" in cond:
+                flag_mask &= _dist_series(df) == str(cond["dist_cat"])
+                used_condition = True
+            if "weight_change" in cond:
+                derived = df.apply(_derive_weight_change, axis=1)
+                flag_mask &= derived == str(cond["weight_change"])
+                used_condition = True
+
+        elif cat == "SEA":
+            if "month" in cond and "race_code" in df.columns:
+                month_series = df["race_code"].astype(str).str[4:6].str.lstrip("0")
+                flag_mask &= month_series == str(cond["month"])
+                used_condition = True
+            if "barei" in cond and "barei" in df.columns:
+                flag_mask &= _series_text(df["barei"]) == str(cond["barei"])
+                used_condition = True
+            if "dist_cat" in cond:
+                flag_mask &= _dist_series(df) == str(cond["dist_cat"])
+                used_condition = True
+
+        elif cat == "TRN":
+            if "weight_change" in cond:
+                derived = df.apply(_derive_weight_change, axis=1)
+                flag_mask &= derived == str(cond["weight_change"])
+                used_condition = True
+            if "training_score_v2_min" in cond and "training_score_v2" in df.columns:
+                flag_mask &= pd.to_numeric(df["training_score_v2"], errors="coerce").fillna(0).ge(float(cond["training_score_v2_min"]))
+                used_condition = True
+            if "ninki_max" in cond and "tansho_ninkijun" in df.columns:
+                ninki = pd.to_numeric(df["tansho_ninkijun"], errors="coerce").fillna(99)
+                flag_mask &= ninki <= int(cond["ninki_max"])
+                used_condition = True
+
+        elif cat in {"DBT", "SHG"}:
+            if cat == "DBT":
+                if "is_debut" in cond and "is_debut" in df.columns:
+                    flag_mask &= pd.to_numeric(df["is_debut"], errors="coerce").fillna(0).eq(int(cond["is_debut"]))
+                    used_condition = True
+                if "debut_score_min" in cond and "debut_score" in df.columns:
+                    flag_mask &= pd.to_numeric(df["debut_score"], errors="coerce").fillna(0).ge(float(cond["debut_score_min"]))
+                    used_condition = True
+                if "training_score_v2_min" in cond and "training_score_v2" in df.columns:
+                    flag_mask &= pd.to_numeric(df["training_score_v2"], errors="coerce").fillna(0).ge(float(cond["training_score_v2_min"]))
+                    used_condition = True
+                if "jockey_debut_win_rate_min" in cond and "jockey_debut_win_rate" in df.columns:
+                    flag_mask &= pd.to_numeric(df["jockey_debut_win_rate"], errors="coerce").fillna(0).ge(float(cond["jockey_debut_win_rate_min"]))
+                    used_condition = True
+                if "trainer_debut_win_rate_min" in cond and "trainer_debut_win_rate" in df.columns:
+                    flag_mask &= pd.to_numeric(df["trainer_debut_win_rate"], errors="coerce").fillna(0).ge(float(cond["trainer_debut_win_rate_min"]))
+                    used_condition = True
+                if "sire_debut_win_rate_min" in cond and "sire_debut_win_rate" in df.columns:
+                    flag_mask &= pd.to_numeric(df["sire_debut_win_rate"], errors="coerce").fillna(0).ge(float(cond["sire_debut_win_rate_min"]))
+                    used_condition = True
+            if cat == "SHG":
+                if "is_shogai" in cond and "is_shogai" in df.columns:
+                    flag_mask &= pd.to_numeric(df["is_shogai"], errors="coerce").fillna(0).eq(int(cond["is_shogai"]))
+                    used_condition = True
+                if "shogai_score_min" in cond and "shogai_score" in df.columns:
+                    flag_mask &= pd.to_numeric(df["shogai_score"], errors="coerce").fillna(0).ge(float(cond["shogai_score_min"]))
+                    used_condition = True
+                if "shogai_keiken_min" in cond and "shogai_keiken" in df.columns:
+                    flag_mask &= pd.to_numeric(df["shogai_keiken"], errors="coerce").fillna(0).ge(float(cond["shogai_keiken_min"]))
+                    used_condition = True
+                if "training_score_v2_min" in cond and "training_score_v2" in df.columns:
+                    flag_mask &= pd.to_numeric(df["training_score_v2"], errors="coerce").fillna(0).ge(float(cond["training_score_v2_min"]))
+                    used_condition = True
+                if "jockey_shogai_win_rate_min" in cond and "jockey_shogai_win_rate" in df.columns:
+                    flag_mask &= pd.to_numeric(df["jockey_shogai_win_rate"], errors="coerce").fillna(0).ge(float(cond["jockey_shogai_win_rate_min"]))
+                    used_condition = True
+                if "trainer_shogai_win_rate_min" in cond and "trainer_shogai_win_rate" in df.columns:
+                    flag_mask &= pd.to_numeric(df["trainer_shogai_win_rate"], errors="coerce").fillna(0).ge(float(cond["trainer_shogai_win_rate_min"]))
+                    used_condition = True
+
+        flag_series = flag_mask.astype(int)
+        if used_condition and flag_series.sum() > 0:
             df[col_name] = flag_series
             added += 1
             print(f"    + {col_name}: {flag_series.sum():,}行 にフラグ")
@@ -728,6 +1112,59 @@ def update_changelog(
         f.write(entry)
 
 
+def write_knowledge_summary(state: Dict[str, Dict], version: str) -> Dict[str, Any]:
+    active = [v for v in state.values() if v.get("status") == "active"]
+    deprecated = [v for v in state.values() if v.get("status") == "deprecated"]
+    by_cat = defaultdict(list)
+    for item in active:
+        by_cat[item.get("category", "?")].append(item)
+
+    def _top_items(items: List[Dict], n: int = 10) -> List[Dict[str, Any]]:
+        out = []
+        for item in sorted(items, key=lambda x: (x.get("confidence", 0), x.get("sample_count", 0)), reverse=True)[:n]:
+            out.append({
+                "id": item.get("id", ""),
+                "category": item.get("category", ""),
+                "confidence": round(float(item.get("confidence", 0)), 4),
+                "sample_count": int(item.get("sample_count", 0)),
+                "claim": item.get("claim", ""),
+                "condition": item.get("condition", {}),
+                "condition_summary": item.get("condition_summary", _condition_summary(item.get("condition", {}))),
+                "lift": float(item.get("metrics", {}).get("estimated_lift", 1.0) or 1.0),
+            })
+        return out
+
+    summary = {
+        "version": version,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "active_count": len(active),
+        "deprecated_count": len(deprecated),
+        "high_conf_count": sum(1 for v in active if v.get("confidence", 0) >= CONF_HARD),
+        "medium_conf_count": sum(1 for v in active if CONF_MEDIUM <= v.get("confidence", 0) < CONF_HARD),
+        "low_conf_count": sum(1 for v in active if v.get("confidence", 0) < CONF_MEDIUM),
+        "categories": {},
+        "top_items": _top_items(active, 20),
+        "recent_items": _top_items(
+            [v for v in active if str(v.get("version_modified", "")) == str(version) or str(v.get("version_created", "")) == str(version)],
+            20,
+        ),
+    }
+    for cat, items in by_cat.items():
+        confs = [float(v.get("confidence", 0)) for v in items]
+        summary["categories"][cat] = {
+            "label": CAT_LABELS.get(cat, cat),
+            "count": len(items),
+            "high_conf": sum(1 for v in items if v.get("confidence", 0) >= CONF_HARD),
+            "avg_confidence": round(sum(confs) / max(len(confs), 1), 4),
+        }
+
+    path = os.path.join(KB_DIR, "knowledge_summary.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2)
+    print(f"  [KB] knowledge summary: {path}")
+    return summary
+
+
 # ─────────────────────────────────────────────────────────────
 # レポート出力
 # ─────────────────────────────────────────────────────────────
@@ -749,11 +1186,11 @@ def print_knowledge_report(state: Dict[str, Dict]):
         high = [i for i in items if i.get("confidence", 0) >= CONF_HARD]
         print(f"  [{cat}] {CAT_LABELS[cat]}: {len(items)}件"
               f"（高確信度: {len(high)}件）")
-        for item in sorted(items, key=lambda x: x.get("confidence", 0), reverse=True)[:3]:
+        for item in sorted(items, key=lambda x: (x.get("confidence", 0), x.get("sample_count", 0)), reverse=True)[:3]:
             conf = item.get("confidence", 0)
             n    = item.get("sample_count", 0)
             bar  = "█" * int(conf * 10) + "░" * (10 - int(conf * 10))
-            print(f"    {bar} {conf:.2f} n={n:3d}  {item.get('claim','')[:40]}")
+            print(f"    {bar} {conf:.2f} n={n:3d}  {item.get('condition_summary', _condition_summary(item.get('condition', {})))[:40]}")
 
     deprecated = sum(1 for v in state.values() if v.get("status") == "deprecated")
     print(f"\n  廃止済み: {deprecated}件")
@@ -890,6 +1327,9 @@ def run_knowledge_curator(days: int = 7, force_snapshot: bool = False):
     # ── Changelog更新 ──
     update_changelog(created_count, len(confirms), deprecated_count, state, version)
 
+    # ── 知識サマリー更新 ──
+    write_knowledge_summary(state, version)
+
     # ── レポート ──
     print_knowledge_report(state)
 
@@ -942,17 +1382,100 @@ def load_ev_boost_for_race(race_code: str, df_row: pd.Series) -> float:
 
 def _match_condition(cond: Dict, cat: str, row: pd.Series) -> bool:
     """特徴量行が知見の条件に合致するか判定"""
+    cond = _normalize_condition_dict(cond)
     if cat == "BLD":
         if "chichi" in cond:
             if str(row.get("chichi", "")) != str(cond["chichi"]):
                 return False
-        if "track_surface" in cond:
-            if str(row.get("track_surface", "")) not in cond["track_surface"]:
+        if "baba_jotai" in cond:
+            if str(row.get("baba_jotai", row.get("baba_jotai_code", ""))) != str(cond["baba_jotai"]):
+                return False
+        if "keibajo_code" in cond and str(row.get("keibajo_code", "")) != str(cond["keibajo_code"]):
+            return False
+        if "dist_cat" in cond:
+            kyori = float(row.get("kyori", 0) or 0)
+            dist = "短距離" if kyori <= 1400 else "中距離" if kyori <= 2000 else "長距離"
+            if dist != str(cond["dist_cat"]):
                 return False
         return True
     elif cat == "JKY":
-        if "kishu_code" in cond:
-            return str(row.get("kishu_code", "")) == str(cond["kishu_code"])
+        if "kishu_code" in cond and str(row.get("kishu_code", "")) != str(cond["kishu_code"]):
+            return False
+        if "keibajo_code" in cond and str(row.get("keibajo_code", "")) != str(cond["keibajo_code"]):
+            return False
+        if "dist_cat" in cond:
+            kyori = float(row.get("kyori", 0) or 0)
+            dist = "短距離" if kyori <= 1400 else "中距離" if kyori <= 2000 else "長距離"
+            if dist != str(cond["dist_cat"]):
+                return False
+        return True
+    elif cat == "TRK":
+        if "keibajo_code" in cond and str(row.get("keibajo_code", "")) != str(cond["keibajo_code"]):
+            return False
+        if "kyakushitsu" in cond and str(row.get("kyakushitsu_hantei", row.get("kyakushitsu", ""))) != str(cond["kyakushitsu"]):
+            return False
+        if "dist_cat" in cond:
+            kyori = float(row.get("kyori", 0) or 0)
+            dist = "短距離" if kyori <= 1400 else "中距離" if kyori <= 2000 else "長距離"
+            if dist != str(cond["dist_cat"]):
+                return False
+        if "weight_change" in cond and _derive_weight_change(row) != str(cond["weight_change"]):
+            return False
+        return True
+    elif cat == "SEA":
+        if "month" in cond:
+            month = str(row.get("month", ""))
+            if not month and "race_code" in row:
+                rc = str(row.get("race_code", ""))
+                month = rc[4:6].lstrip("0")
+            if month != str(cond["month"]):
+                return False
+        if "barei" in cond and str(row.get("barei", "")) != str(cond["barei"]):
+            return False
+        if "dist_cat" in cond:
+            kyori = float(row.get("kyori", 0) or 0)
+            dist = "短距離" if kyori <= 1400 else "中距離" if kyori <= 2000 else "長距離"
+            if dist != str(cond["dist_cat"]):
+                return False
+        return True
+    elif cat == "TRN":
+        if "weight_change" in cond and _derive_weight_change(row) != str(cond["weight_change"]):
+            return False
+        if "training_score_v2_min" in cond and float(row.get("training_score_v2", 0) or 0) < float(cond["training_score_v2_min"]):
+            return False
+        if "ninki_max" in cond:
+            ninki = pd.to_numeric(pd.Series([row.get("tansho_ninkijun", row.get("ninki", 99))]), errors="coerce").fillna(99).iloc[0]
+            if ninki > float(cond["ninki_max"]):
+                return False
+        return True
+    elif cat == "DBT":
+        if "is_debut" in cond and int(row.get("is_debut", 0) or 0) != int(cond["is_debut"]):
+            return False
+        if "debut_score_min" in cond and float(row.get("debut_score", 0) or 0) < float(cond["debut_score_min"]):
+            return False
+        if "training_score_v2_min" in cond and float(row.get("training_score_v2", 0) or 0) < float(cond["training_score_v2_min"]):
+            return False
+        if "jockey_debut_win_rate_min" in cond and float(row.get("jockey_debut_win_rate", 0) or 0) < float(cond["jockey_debut_win_rate_min"]):
+            return False
+        if "trainer_debut_win_rate_min" in cond and float(row.get("trainer_debut_win_rate", 0) or 0) < float(cond["trainer_debut_win_rate_min"]):
+            return False
+        if "sire_debut_win_rate_min" in cond and float(row.get("sire_debut_win_rate", 0) or 0) < float(cond["sire_debut_win_rate_min"]):
+            return False
+        return True
+    elif cat == "SHG":
+        if "is_shogai" in cond and int(row.get("is_shogai", 0) or 0) != int(cond["is_shogai"]):
+            return False
+        if "shogai_score_min" in cond and float(row.get("shogai_score", 0) or 0) < float(cond["shogai_score_min"]):
+            return False
+        if "shogai_keiken_min" in cond and float(row.get("shogai_keiken", 0) or 0) < float(cond["shogai_keiken_min"]):
+            return False
+        if "training_score_v2_min" in cond and float(row.get("training_score_v2", 0) or 0) < float(cond["training_score_v2_min"]):
+            return False
+        if "jockey_shogai_win_rate_min" in cond and float(row.get("jockey_shogai_win_rate", 0) or 0) < float(cond["jockey_shogai_win_rate_min"]):
+            return False
+        if "trainer_shogai_win_rate_min" in cond and float(row.get("trainer_shogai_win_rate", 0) or 0) < float(cond["trainer_shogai_win_rate_min"]):
+            return False
+        return True
     elif cat == "MKT":
         # MKTは馬個別ではなくレース全体の特性なので常にFalse
         return False
@@ -1351,6 +1874,108 @@ def _compute_historical_stats(engine, year_from: int = 2000) -> Dict[str, pd.Dat
     df14["roi"]      = df14["win_rate"] * df14["avg_odds"]
     stats["MKT_upset_profile"] = df14
 
+    # ── 15. 新馬戦・障害戦 特化集計（特徴量CSV） ────────────
+    print("    [15/16] 新馬戦・障害戦 特化集計...")
+    if os.path.exists(FEAT_FILE):
+        try:
+            header_cols = set(pd.read_csv(FEAT_FILE, nrows=0).columns)
+            feature_cols = [
+                "race_code", "kakutei_chakujun", "is_debut", "debut_score",
+                "jockey_debut_win_rate", "trainer_debut_win_rate",
+                "sire_debut_win_rate", "training_score_v2",
+                "is_shogai", "shogai_score", "shogai_keiken",
+                "jockey_shogai_win_rate", "trainer_shogai_win_rate",
+                "barei", "bataiju", "kyori",
+            ]
+            usecols = [c for c in feature_cols if c in header_cols]
+            if "kakutei_chakujun" not in usecols:
+                usecols.append("kakutei_chakujun")
+            df_feat = pd.read_csv(FEAT_FILE, on_bad_lines="skip", low_memory=False, usecols=usecols)
+            df_feat["kakutei_chakujun"] = pd.to_numeric(df_feat["kakutei_chakujun"], errors="coerce").fillna(99)
+            df_feat["win"] = (df_feat["kakutei_chakujun"] == 1).astype(int)
+
+            debut_rows = []
+            if {"is_debut", "debut_score"} <= set(df_feat.columns):
+                debut = df_feat[df_feat["is_debut"] == 1].copy()
+                debut_thresholds = [
+                    ("debut_score_min", "debut_score", [0.60, 0.70, 0.80], 60),
+                    ("training_score_v2_min", "training_score_v2", [0.60, 0.70], 60),
+                    ("jockey_debut_win_rate_min", "jockey_debut_win_rate", [0.15, 0.20], 40),
+                    ("trainer_debut_win_rate_min", "trainer_debut_win_rate", [0.15, 0.20], 40),
+                    ("sire_debut_win_rate_min", "sire_debut_win_rate", [0.15, 0.20], 40),
+                ]
+                for signal, col, thresholds, min_n in debut_thresholds:
+                    if col not in debut.columns:
+                        continue
+                    for thr in thresholds:
+                        sub = debut[pd.to_numeric(debut[col], errors="coerce").fillna(0) >= thr]
+                        if len(sub) >= min_n:
+                            debut_rows.append({
+                                "signal": signal,
+                                "threshold": thr,
+                                "n": len(sub),
+                                "wins": int(sub["win"].sum()),
+                                "win_rate": float(sub["win"].mean()),
+                                "avg_score": float(pd.to_numeric(sub.get("debut_score", pd.Series(dtype=float)), errors="coerce").fillna(0).mean()) if "debut_score" in sub.columns else 0.0,
+                                "avg_train": float(pd.to_numeric(sub.get("training_score_v2", pd.Series(dtype=float)), errors="coerce").fillna(0).mean()) if "training_score_v2" in sub.columns else 0.0,
+                                "avg_jockey": float(pd.to_numeric(sub.get("jockey_debut_win_rate", pd.Series(dtype=float)), errors="coerce").fillna(0).mean()) if "jockey_debut_win_rate" in sub.columns else 0.0,
+                                "avg_trainer": float(pd.to_numeric(sub.get("trainer_debut_win_rate", pd.Series(dtype=float)), errors="coerce").fillna(0).mean()) if "trainer_debut_win_rate" in sub.columns else 0.0,
+                                "avg_sire": float(pd.to_numeric(sub.get("sire_debut_win_rate", pd.Series(dtype=float)), errors="coerce").fillna(0).mean()) if "sire_debut_win_rate" in sub.columns else 0.0,
+                            })
+            if debut_rows:
+                stats["DBT"] = pd.DataFrame(debut_rows).sort_values(["win_rate", "n"], ascending=False)
+
+            shogai_rows = []
+            if {"is_shogai", "shogai_score"} <= set(df_feat.columns):
+                shogai = df_feat[df_feat["is_shogai"] == 1].copy()
+                shogai_thresholds = [
+                    ("shogai_score_min", "shogai_score", [0.60, 0.70, 0.80], 20),
+                    ("shogai_keiken_min", "shogai_keiken", [1, 3, 5], 20),
+                    ("jockey_shogai_win_rate_min", "jockey_shogai_win_rate", [0.10, 0.15, 0.20], 20),
+                    ("trainer_shogai_win_rate_min", "trainer_shogai_win_rate", [0.10, 0.15, 0.20], 20),
+                    ("training_score_v2_min", "training_score_v2", [0.60, 0.70], 20),
+                ]
+                for signal, col, thresholds, min_n in shogai_thresholds:
+                    if col not in shogai.columns:
+                        continue
+                    for thr in thresholds:
+                        sub = shogai[pd.to_numeric(shogai[col], errors="coerce").fillna(0) >= thr]
+                        if len(sub) >= min_n:
+                            shogai_rows.append({
+                                "signal": signal,
+                                "threshold": thr,
+                                "n": len(sub),
+                                "wins": int(sub["win"].sum()),
+                                "win_rate": float(sub["win"].mean()),
+                                "avg_score": float(pd.to_numeric(sub.get("shogai_score", pd.Series(dtype=float)), errors="coerce").fillna(0).mean()) if "shogai_score" in sub.columns else 0.0,
+                                "avg_keiken": float(pd.to_numeric(sub.get("shogai_keiken", pd.Series(dtype=float)), errors="coerce").fillna(0).mean()) if "shogai_keiken" in sub.columns else 0.0,
+                                "avg_jockey": float(pd.to_numeric(sub.get("jockey_shogai_win_rate", pd.Series(dtype=float)), errors="coerce").fillna(0).mean()) if "jockey_shogai_win_rate" in sub.columns else 0.0,
+                                "avg_trainer": float(pd.to_numeric(sub.get("trainer_shogai_win_rate", pd.Series(dtype=float)), errors="coerce").fillna(0).mean()) if "trainer_shogai_win_rate" in sub.columns else 0.0,
+                                "avg_train": float(pd.to_numeric(sub.get("training_score_v2", pd.Series(dtype=float)), errors="coerce").fillna(0).mean()) if "training_score_v2" in sub.columns else 0.0,
+                            })
+            if shogai_rows:
+                stats["SHG"] = pd.DataFrame(shogai_rows).sort_values(["win_rate", "n"], ascending=False)
+
+            if "training_score_v2" in df_feat.columns:
+                trn = df_feat.copy()
+                trn["training_score_v2"] = pd.to_numeric(trn["training_score_v2"], errors="coerce").fillna(0)
+                trn_rows = []
+                for thr in [0.50, 0.60, 0.70, 0.80]:
+                    sub = trn[trn["training_score_v2"] >= thr]
+                    if len(sub) >= 100:
+                        trn_rows.append({
+                            "signal": "training_score_v2_min",
+                            "threshold": thr,
+                            "n": len(sub),
+                            "wins": int(sub["win"].sum()),
+                            "win_rate": float(sub["win"].mean()),
+                            "avg_train": float(sub["training_score_v2"].mean()),
+                        })
+                if trn_rows:
+                    stats["TRN_training"] = pd.DataFrame(trn_rows).sort_values(["win_rate", "n"], ascending=False)
+        except Exception as e:
+            print(f"      ⚠️ 新馬/障害集計スキップ: {e}")
+
     total_races = sum(len(df) for df in stats.values())
     print(f"  ✅ 集計完了: {len(stats)}カテゴリ / {total_races}行")
     return stats
@@ -1488,6 +2113,48 @@ def _format_stats_for_llm(stats: Dict[str, pd.DataFrame], category: str) -> str:
             )
         return "\n".join(lines)
 
+    elif category == "DBT":
+        df = stats.get("DBT", pd.DataFrame())
+        if df.empty:
+            return ""
+        top = df.nlargest(20, "win_rate")
+        lines = ["【新馬戦スコア・新馬実績 閾値別成績】"]
+        for _, r in top.iterrows():
+            lines.append(
+                f"  {r['signal']} >= {r['threshold']:.2f}: "
+                f"勝率{r['win_rate']:.1%} n={r['n']:.0f} "
+                f"(train={r.get('avg_train', 0):.2f}, jockey={r.get('avg_jockey', 0):.2f})"
+            )
+        return "\n".join(lines)
+
+    elif category == "SHG":
+        df = stats.get("SHG", pd.DataFrame())
+        if df.empty:
+            return ""
+        top = df.nlargest(20, "win_rate")
+        lines = ["【障害戦スコア・経験 閾値別成績】"]
+        for _, r in top.iterrows():
+            lines.append(
+                f"  {r['signal']} >= {r['threshold']:.2f}: "
+                f"勝率{r['win_rate']:.1%} n={r['n']:.0f} "
+                f"(keiken={r.get('avg_keiken', 0):.1f}, jockey={r.get('avg_jockey', 0):.2f})"
+            )
+        return "\n".join(lines)
+
+    elif category == "TRN_training":
+        df = stats.get("TRN_training", pd.DataFrame())
+        if df.empty:
+            return ""
+        top = df.nlargest(20, "win_rate")
+        lines = ["【調教スコア閾値別成績】"]
+        for _, r in top.iterrows():
+            lines.append(
+                f"  training_score_v2 >= {r['threshold']:.2f}: "
+                f"勝率{r['win_rate']:.1%} n={r['n']:.0f} "
+                f"(avg_train={r.get('avg_train', 0):.2f})"
+            )
+        return "\n".join(lines)
+
     elif category == "JKY_baba_dist":
         df = stats.get("JKY_baba_dist", pd.DataFrame())
         if df.empty:
@@ -1556,7 +2223,7 @@ _HIST_EXTRACT_SYSTEM = """あなたは競馬統計の専門家です。
 {
   "insights": [
     {
-      "category": "BLD|JKY|TRK|MKT|SEA",
+      "category": "BLD|JKY|TRK|MKT|SEA|TRN|DBT|SHG",
       "condition": {"field": "value"},
       "claim": "50文字以内の日本語",
       "evidence_count": N,
@@ -1568,10 +2235,24 @@ _HIST_EXTRACT_SYSTEM = """あなたは競馬統計の専門家です。
 
 
 def _extract_historical_insights_llm(stats_text: str, cat_label: str) -> List[Dict]:
-    """統計サマリーをLLMに渡して知見を抽出"""
+    """統計サマリーをLLMに渡して知見を抽出（Ollama優先 → Claude Haiku → 空リスト）"""
+    user_msg = "以下の" + cat_label + "統計から知見を抽出してください:\n\n" + stats_text
+
+    # 1. Ollama（無料）
+    ollama_resp = _call_ollama_curator(
+        user_msg, system=_HIST_EXTRACT_SYSTEM, temperature=0.3
+    )
+    if ollama_resp:
+        try:
+            m = re.search(r"\{.*\}", ollama_resp, re.DOTALL)
+            if m:
+                return json.loads(m.group()).get("insights", [])
+        except Exception:
+            pass
+
+    # 2. Claude Haiku（有料フォールバック）
     if not _ANTHROPIC_KEY:
         return []
-    user_msg = f"以下の{cat_label}統計から知見を抽出してください:\n\n{stats_text}"
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
@@ -1596,7 +2277,7 @@ def _extract_historical_insights_llm(stats_text: str, cat_label: str) -> List[Di
         if m:
             return json.loads(m.group()).get("insights", [])
     except Exception as e:
-        print(f"    ⚠️ LLM抽出エラー: {e}")
+        print("    LLM抽出エラー: " + str(e))
     return []
 
 
@@ -1765,6 +2446,80 @@ def _extract_historical_insights_rule(stats: Dict[str, pd.DataFrame]) -> List[Di
                 "confidence_prior": 0.60,
             })
 
+    # DBT: 新馬戦の高スコア・高実績条件
+    df_dbt = stats.get("DBT", pd.DataFrame())
+    for _, r in df_dbt.iterrows():
+        if r["win_rate"] >= baseline_win + 0.10 and r["n"] >= 40:
+            signal = str(r["signal"])
+            thr = float(r["threshold"])
+            if signal == "debut_score_min":
+                cond = {"is_debut": 1, "debut_score_min": thr}
+                claim = f"新馬戦でdebut_score≥{thr:.2f}は勝率{r['win_rate']:.0%}"
+            elif signal == "training_score_v2_min":
+                cond = {"is_debut": 1, "training_score_v2_min": thr}
+                claim = f"新馬戦で調教スコア≥{thr:.2f}は勝率{r['win_rate']:.0%}"
+            elif signal == "jockey_debut_win_rate_min":
+                cond = {"is_debut": 1, "jockey_debut_win_rate_min": thr}
+                claim = f"新馬戦で騎手新馬率≥{thr:.2f}は勝率{r['win_rate']:.0%}"
+            elif signal == "trainer_debut_win_rate_min":
+                cond = {"is_debut": 1, "trainer_debut_win_rate_min": thr}
+                claim = f"新馬戦で調教師新馬率≥{thr:.2f}は勝率{r['win_rate']:.0%}"
+            else:
+                cond = {"is_debut": 1, "sire_debut_win_rate_min": thr}
+                claim = f"新馬戦で父馬新馬率≥{thr:.2f}は勝率{r['win_rate']:.0%}"
+            insights.append({
+                "category": "DBT",
+                "condition": cond,
+                "claim": claim,
+                "evidence_count": int(r["n"]),
+                "estimated_lift": round(r["win_rate"] / baseline_win, 2),
+                "confidence_prior": min(0.55 + (r["n"] - 40) / 800, 0.78),
+            })
+
+    # SHG: 障害戦の高スコア・高経験条件
+    df_shg = stats.get("SHG", pd.DataFrame())
+    for _, r in df_shg.iterrows():
+        if r["win_rate"] >= baseline_win + 0.08 and r["n"] >= 20:
+            signal = str(r["signal"])
+            thr = float(r["threshold"])
+            if signal == "shogai_score_min":
+                cond = {"is_shogai": 1, "shogai_score_min": thr}
+                claim = f"障害戦でshogai_score≥{thr:.2f}は勝率{r['win_rate']:.0%}"
+            elif signal == "shogai_keiken_min":
+                cond = {"is_shogai": 1, "shogai_keiken_min": thr}
+                claim = f"障害戦で経験{thr:.0f}戦以上は勝率{r['win_rate']:.0%}"
+            elif signal == "jockey_shogai_win_rate_min":
+                cond = {"is_shogai": 1, "jockey_shogai_win_rate_min": thr}
+                claim = f"障害戦で騎手障害率≥{thr:.2f}は勝率{r['win_rate']:.0%}"
+            elif signal == "trainer_shogai_win_rate_min":
+                cond = {"is_shogai": 1, "trainer_shogai_win_rate_min": thr}
+                claim = f"障害戦で調教師障害率≥{thr:.2f}は勝率{r['win_rate']:.0%}"
+            else:
+                cond = {"is_shogai": 1, "training_score_v2_min": thr}
+                claim = f"障害戦で調教スコア≥{thr:.2f}は勝率{r['win_rate']:.0%}"
+            insights.append({
+                "category": "SHG",
+                "condition": cond,
+                "claim": claim,
+                "evidence_count": int(r["n"]),
+                "estimated_lift": round(r["win_rate"] / baseline_win, 2),
+                "confidence_prior": min(0.55 + (r["n"] - 20) / 400, 0.78),
+            })
+
+    # TRN_training: 調教スコアの閾値パターン
+    df_trn = stats.get("TRN_training", pd.DataFrame())
+    for _, r in df_trn.iterrows():
+        if r["win_rate"] >= baseline_win + 0.08 and r["n"] >= 100:
+            thr = float(r["threshold"])
+            insights.append({
+                "category": "TRN",
+                "condition": {"training_score_v2_min": thr},
+                "claim": f"調教スコア≥{thr:.2f}は勝率{r['win_rate']:.0%}",
+                "evidence_count": int(r["n"]),
+                "estimated_lift": round(r["win_rate"] / baseline_win, 2),
+                "confidence_prior": min(0.58 + (r["n"] - 100) / 1000, 0.80),
+            })
+
     return insights
 
 
@@ -1811,7 +2566,10 @@ def run_historical_batch(year_from: int = 2000, use_llm: bool = True):
         "MKT_ninki_month":  "穴人気×月 ROIパターン",
         "MKT_upset_profile":"穴馬プロファイル（人気帯×距離×グレード）",
         "TRN_weight":       "体重増減×人気 勝率パターン",
+        "TRN_training":     "調教スコア閾値",
         "GRADE":            "グレード別穴馬出現",
+        "DBT":              "新馬戦スコア・新馬実績",
+        "SHG":              "障害戦スコア・障害経験",
     }
 
     if use_llm and _ANTHROPIC_KEY:
@@ -1926,10 +2684,13 @@ if __name__ == "__main__":
     parser.add_argument("--snapshot",    action="store_true")
     parser.add_argument("--historical",  action="store_true", help="2000年〜一括処理")
     parser.add_argument("--year-from",   type=int,  default=2000)
-    parser.add_argument("--no-llm",      action="store_true", help="ルールベースのみ")
+    parser.add_argument("--no-llm",      action="store_true",
+                        help="LLMを使わずルールベースのみ")
     args = parser.parse_args()
 
-    if args.historical:
-        run_historical_batch(year_from=args.year_from, use_llm=not args.no_llm)
+    if args.check:
+        check_knowledge_base()
+    elif args.historical:
+        run_historical_ingestion(year_from=args.year_from, use_llm=not args.no_llm)
     else:
-        run_knowledge_curator(days=args.days, force_snapshot=args.snapshot)
+        run_knowledge_curator(use_llm=not args.no_llm)

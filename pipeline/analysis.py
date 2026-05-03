@@ -3,7 +3,7 @@ import numpy as np
 
 def detailed_analysis():
     df = pd.read_csv("D:\\keiba_ai\\simulation_2025.csv",
-                     encoding="utf-8-sig")
+                     encoding="utf-8-sig", on_bad_lines="skip")
     
     print("="*50)
     print("📊 2025年 詳細分析レポート")

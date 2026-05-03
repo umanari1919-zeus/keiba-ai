@@ -1,0 +1,18 @@
+2026-05-03 09:21:36,854 [INFO] === rag_index ステージ開始 trace=37c6de00-5859-4c78-aa26-6704cd52b185 ===
+2026-05-03 09:21:38,364 [INFO] CSV 読み込み中: D:\keiba_ai\keiba_data_features.csv
+2026-05-03 09:21:56,037 [INFO]   総行数: 459158
+2026-05-03 09:21:56,037 [INFO] [DRY-RUN] インデックス構築をスキップします。
+2026-05-03 09:21:56,090 [INFO] rag_index 完了: {'indexed': 0, 'csv_rows': 459158, 'dry_run': True}
+2026-05-03 09:22:12,060 [INFO] === rag_index ステージ開始 trace=1f1906ba-7135-4fa2-8cc5-2cee71bf32b3 ===
+2026-05-03 09:22:13,723 [INFO] CSV 読み込み中: D:\keiba_ai\keiba_data_features.csv
+2026-05-03 09:22:37,045 [INFO]   総行数: 459158
+2026-05-03 09:22:37,158 [INFO]   limit=5000 適用 → 5000 行
+2026-05-03 09:22:37,181 [INFO] RAGStore バックエンド: json
+2026-05-03 09:22:37,181 [INFO] RAG: json fallback backend (D:\keiba_ai\data\rag_store\umanari_horses.jsonl)
+2026-05-03 09:22:41,288 [INFO]   インデックス構築中: 1000 行完了
+2026-05-03 09:22:45,479 [INFO]   インデックス構築中: 2000 行完了
+2026-05-03 09:22:49,762 [INFO]   インデックス構築中: 3000 行完了
+2026-05-03 09:22:53,266 [INFO]   インデックス構築中: 4000 行完了
+2026-05-03 09:22:56,845 [INFO]   インデックス構築中: 5000 行完了
+2026-05-03 09:22:56,854 [INFO] RAG インデックス構築完了: indexed=5000 skipped=0 backend=json
+2026-05-03 09:22:56,856 [INFO] rag_index 完了: {'indexed': 5000, 'skipped': 0, 'csv_rows': 459158, 'backend': 'json'}

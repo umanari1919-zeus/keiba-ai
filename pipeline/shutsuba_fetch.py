@@ -17,6 +17,8 @@ import numpy as np
 from datetime import datetime
 from typing import Optional, List, Dict
 
+from pipeline.db_sync_42 import add_ingest_meta, write_snapshot
+
 BASE_DIR = "D:\\keiba_ai"
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
@@ -40,15 +42,22 @@ KEIBAJO_NAME2CODE.update({
 })
 
 DB_CONFIG = dict(host="127.0.0.1", port=5433, dbname="mykeibadb",
-                 user="postgres", password="zeus",
+                 user="postgres",
                  options="-c client_encoding=UTF8")
 
 
 def _db_query(sql: str, params=None) -> List[Dict]:
-    with psycopg2.connect(**DB_CONFIG) as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(sql, params or [])
-            return [dict(r) for r in cur.fetchall()]
+    last_err = None
+    for attempt in range(1, 4):
+        try:
+            with psycopg2.connect(**DB_CONFIG) as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute(sql, params or [])
+                    return [dict(r) for r in cur.fetchall()]
+        except Exception as e:
+            last_err = e
+            time.sleep(1.5 * attempt)
+    raise last_err
 
 
 def _get_http(url: str) -> str:
@@ -246,6 +255,67 @@ def _build_horse_history() -> pd.DataFrame:
     return df
 
 
+def _build_prev_race_features() -> pd.DataFrame:
+    """
+    前走情報: 各馬の直近1走の着順・競馬場・距離・グレード・騎手変更フラグを取得。
+    data_fetch_01.py と同じ派生特徴量を再現する。
+    """
+    sql = """
+        WITH ordered AS (
+            SELECT
+                u.ketto_toroku_bango,
+                u.kishu_code,
+                u.kakutei_chakujun::int AS chakujun,
+                u.tansho_odds::numeric  AS odds,
+                u.keibajo_code,
+                r.kyori,
+                r.grade_code,
+                u.kaisai_nen || u.kaisai_gappi AS race_date,
+                ROW_NUMBER() OVER (
+                    PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code DESC
+                ) AS rn,
+                LAG(u.kishu_code) OVER (
+                    PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code DESC
+                ) AS next_kishu_code
+            FROM umagoto_race_joho u
+            JOIN race_shosai r ON u.race_code = r.race_code
+            WHERE u.kakutei_chakujun ~ '^[0-9]+'
+              AND u.tansho_odds ~ '^[0-9]+'
+        )
+        SELECT
+            ketto_toroku_bango,
+            MAX(CASE WHEN rn=1 THEN chakujun END) AS prev_chakujun,
+            MAX(CASE WHEN rn=1 THEN odds END) / 10.0 AS prev_odds,
+            MAX(CASE WHEN rn=1 THEN keibajo_code END) AS prev_keibajo,
+            MAX(CASE WHEN rn=1 THEN kyori END)::int   AS prev_kyori,
+            MAX(CASE WHEN rn=1 THEN grade_code END)   AS prev_grade,
+            -- 騎手変更: 直近1走の騎手 ≠ 直近2走の騎手
+            MAX(CASE WHEN rn=1 AND kishu_code IS DISTINCT FROM next_kishu_code
+                     THEN 1 ELSE 0 END) AS kishu_change
+        FROM ordered
+        WHERE rn <= 2
+        GROUP BY ketto_toroku_bango
+    """
+    rows = _db_query(sql)
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows).set_index("ketto_toroku_bango")
+    # グレードスコア（JV-Data grade_code 数値コード対応）
+    GRADE_SCORE = {
+        # JV-Data 数値コード
+        "11": 10, "12": 8, "13": 6, "14": 4, "15": 4,
+        "16": 3, "17": 3, "18": 2, "19": 1, "20": 1, "21": 1,
+        # 旧テキストコード互換
+        "G1": 10, "GI": 10, "G2": 8, "GII": 8, "G3": 6, "GIII": 6,
+        "OP": 4, "L": 4, "3勝": 3, "2勝": 2, "1勝": 1, "新馬": 1, "未勝利": 1, "障害": 5,
+    }
+    def _gs(g):
+        g = str(g).strip() if g else ""
+        return GRADE_SCORE.get(g, 1)
+    df["prev_grade_score"] = df["prev_grade"].apply(_gs)
+    return df
+
+
 def _build_master_features() -> pd.DataFrame:
     """kyosoba_master2 から血統・成績特徴量を取得"""
     sql = """
@@ -271,6 +341,18 @@ def _build_master_features() -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows).set_index("ketto_toroku_bango")
+    # DBから文字列で返るカラムを数値に変換
+    num_cols = [
+        "shiba_ryo_1chaku", "shiba_ryo_2chaku", "shiba_ryo_3chaku",
+        "dirt_ryo_1chaku", "dirt_ryo_2chaku", "dirt_ryo_3chaku",
+        "shiba_short_1chaku", "shiba_middle_1chaku", "shiba_long_1chaku",
+        "dirt_short_1chaku", "dirt_middle_1chaku", "dirt_long_1chaku",
+        "kyakushitsu_keiko_nige", "kyakushitsu_keiko_senko",
+        "kyakushitsu_keiko_sashi", "kyakushitsu_keiko_oikomi",
+    ]
+    for col in num_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     # 馬場適性勝率を計算（feature_eng_02.py と同じ式）
     df["shiba_win_rate"] = df["shiba_ryo_1chaku"] / (
         df["shiba_ryo_1chaku"] + df["shiba_ryo_2chaku"] + df["shiba_ryo_3chaku"] + 1
@@ -314,7 +396,10 @@ def _build_kishu_features() -> pd.DataFrame:
     df = pd.DataFrame(rows)
     df["kishu_code"] = pd.to_numeric(df["kishu_code"], errors="coerce").fillna(0).astype(int)
     # スペース除去でノーマライズ（JV は「姓　名」形式でスペースが入ることがある）
-    df["kishumei_norm"] = df["kishumei"].str.replace(r"[\s\u3000]+", "", regex=True)
+    # PyArrow \u306e RE2 \u306f \u \u30a8\u30b9\u30b1\u30fc\u30d7\u975e\u5bfe\u5fdc\u306e\u305f\u3081 re.sub \u3067\u51e6\u7406
+    df["kishumei_norm"] = df["kishumei"].apply(
+        lambda x: re.sub(r"[\s\u3000]+", "", x) if isinstance(x, str) else ""
+    )
     df = df.drop_duplicates("kishumei_norm")
     return df.set_index("kishumei_norm")
 
@@ -421,8 +506,9 @@ def build_today_entries(date_str: Optional[str] = None) -> pd.DataFrame:
     hist_df          = _build_horse_history()
     chokyo_df        = _build_chokyo_features()
     kishu_df         = _build_kishu_features()
-    kishu_keibajo_sr = _build_kishu_keibajo_features()  # Series indexed by "kishu_ryakusho_keibajo"
+    kishu_keibajo_sr = _build_kishu_keibajo_features()
     chokyoshi_df     = _build_chokyoshi_features()
+    prev_df          = _build_prev_race_features()  # 前走情報（新規追加）
 
     # ニックス特徴量
     nicks_path = os.path.join(BASE_DIR, "pedigree_output", "nicks_feature.csv")
@@ -510,6 +596,23 @@ def build_today_entries(date_str: Optional[str] = None) -> pd.DataFrame:
                     for col in chokyo_df.columns:
                         row[col] = cc[col]
 
+                # 前走情報（新規追加）
+                if not prev_df.empty and ketto in prev_df.index:
+                    pv = prev_df.loc[ketto]
+                    row["prev_chakujun"]    = int(pv.get("prev_chakujun", 0) or 0)
+                    row["prev_odds"]        = float(pv.get("prev_odds", 0) or 0)
+                    row["prev_keibajo"]     = str(pv.get("prev_keibajo", "") or "")
+                    row["prev_kyori"]       = int(pv.get("prev_kyori", 0) or 0)
+                    row["prev_grade_score"] = int(pv.get("prev_grade_score", 1) or 1)
+                    row["kishu_change"]     = int(pv.get("kishu_change", 0) or 0)
+                else:
+                    row.setdefault("prev_chakujun", 0)
+                    row.setdefault("prev_odds", 0)
+                    row.setdefault("prev_keibajo", "")
+                    row.setdefault("prev_kyori", 0)
+                    row.setdefault("prev_grade_score", 1)
+                    row.setdefault("kishu_change", 0)
+
                 # 騎手: kanji名をスペース除去してDBとマッチ
                 kishu_raw  = h["kishumei_ryakusho"]
                 kishu_norm = re.sub(r"[\s\u3000]+", "", kishu_raw)
@@ -527,8 +630,8 @@ def build_today_entries(date_str: Optional[str] = None) -> pd.DataFrame:
                     row["chokyoshi_code"]     = int(chokyoshi_df.loc[cho, "chokyoshi_code"] or 0)
 
                 # ニックス
-                chichi_name    = row.get("chichi", "")
-                haha_chichi    = row.get("haha_chichi", "")
+                chichi_name = row.get("chichi", "")
+                haha_chichi = row.get("haha_chichi", "")
                 nick = nicks_map.get((chichi_name, haha_chichi))
                 if nick is not None:
                     row["nick_index"]      = float(nick.get("nick_index", 1.0) or 1.0)
@@ -536,7 +639,7 @@ def build_today_entries(date_str: Optional[str] = None) -> pd.DataFrame:
                     row["nick_win_rate"]   = float(nick.get("nick_win_rate", 0.0) or 0.0)
                     row["nick_place_rate"] = float(nick.get("nick_place_rate", 0.0) or 0.0)
 
-                # ── 相互作用特徴量（feature_eng_02.py と同じ式） ──
+                # 相互作用特徴量
                 _ck  = int(row.get("chichi_code", 0) or 0)
                 _hk  = int(row.get("haha_code", 0) or 0)
                 _jk  = int(row.get("kishu_code", 0) or 0)
@@ -561,7 +664,7 @@ def build_today_entries(date_str: Optional[str] = None) -> pd.DataFrame:
 
                 all_rows.append(row)
 
-            time.sleep(0.3)  # polite delay
+            time.sleep(0.3)
         except Exception as e:
             print(f"[shutsuba_fetch] {race_id} エラー: {e}")
 
@@ -577,8 +680,7 @@ def _baba_code(baba_str: str) -> str:
     return {"良": "1", "稍重": "2", "重": "3", "不良": "4"}.get(baba_str, "1")
 
 
-def save_today_entries(date_str: Optional[str] = None) -> str:
-    """当日出馬表を CSV 保存して path を返す"""
+def save_today_entries(date_str=None) -> str:
     if date_str is None:
         date_str = datetime.now().strftime("%Y%m%d")
     df = build_today_entries(date_str)
@@ -587,6 +689,18 @@ def save_today_entries(date_str: Optional[str] = None) -> str:
         return ""
     out = os.path.join(DATA_DIR, f"today_entries_{date_str}.csv")
     df.to_csv(out, index=False, encoding="utf-8-sig")
+    try:
+        snapshot = add_ingest_meta(df.assign(trade_date=date_str), source_name=f"shutsuba_fetch:{date_str}")
+        ok = write_snapshot(
+            snapshot,
+            "today_entries_snapshot",
+            if_exists="replace",
+            source_name=f"shutsuba_fetch:{date_str}",
+        )
+        if ok:
+            print(f"[shutsuba_fetch] DB同期: today_entries_snapshot ({date_str})")
+    except Exception as e:
+        print(f"[shutsuba_fetch] DB同期スキップ: {e}")
     print(f"[shutsuba_fetch] 保存: {out}")
     return out
 

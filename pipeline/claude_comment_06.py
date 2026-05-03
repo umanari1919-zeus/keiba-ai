@@ -59,6 +59,42 @@ def _cache_key(bamei: str, odds: float) -> str:
 # Claude API 呼び出し（Haiku + prompt caching）
 # ──────────────────────────────────────────────────────────────
 
+def _call_ollama(bamei: str, odds: float, kishumei: str,
+                 barei: int, bataiju: int,
+                 zogen_sa: int, zogen_fugo: int) -> str:
+    """
+    Ollama (local LLM) でコメントを生成。Claude API より優先（無料）。
+    Ollama が起動していない場合は空文字を返す。
+    """
+    try:
+        from pipeline.ollama_comment import is_ollama_running, get_model_for_task, _generate
+        if not is_ollama_running():
+            return ""
+        model = get_model_for_task("japanese")  # X投稿コメントは日本語プロファイル
+        if not model:
+            return ""
+
+        weight_str = (f"+{zogen_sa}kg増" if zogen_fugo == 1 and zogen_sa > 0
+                      else f"-{zogen_sa}kg減" if zogen_fugo == -1 and zogen_sa > 0
+                      else "前走同重")
+
+        prompt = (
+            f"馬名：{bamei}（{barei}歳）\n"
+            f"騎手：{kishumei}\n"
+            f"オッズ：{odds:.1f}倍\n"
+            f"馬体重：{bataiju}kg（{weight_str}）\n\n"
+            f"上記のデータをもとに、うまなり地蔵のペルソナで"
+            f"100文字以内のX投稿コメントを1つだけ書いてください。"
+        )
+        result = _generate(prompt, system=SYSTEM_PERSONA, model=model, temperature=0.8)
+        if result:
+            print(f"  🤖 Ollama生成: {len(result)}文字")
+        return result or ""
+    except Exception as e:
+        print(f"  [ollama] comment skip: {e}")
+        return ""
+
+
 def _call_claude(bamei: str, odds: float, kishumei: str,
                  barei: int, bataiju: int,
                  zogen_sa: int, zogen_fugo: int) -> str:
@@ -166,12 +202,16 @@ def generate_comment(bamei: str, odds: float, kishumei: str,
         print(f"  ✅ ローカルキャッシュヒット: {bamei}")
         return cache[key]
 
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if api_key:
-        comment = _call_claude(bamei, odds, kishumei,
-                               barei, bataiju, zogen_sa, zogen_fugo)
-    else:
-        comment = ""
+    # 優先順位: Ollama（無料・ローカル）→ Claude API（有料）→ テンプレート
+    comment = _call_ollama(bamei, odds, kishumei, barei, bataiju, zogen_sa, zogen_fugo)
+
+    if not comment:
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if api_key:
+            comment = _call_claude(bamei, odds, kishumei,
+                                   barei, bataiju, zogen_sa, zogen_fugo)
+        else:
+            comment = ""
 
     if not comment:
         comment = _template_comment(bamei, odds, kishumei, pred_chakujun,
@@ -192,7 +232,7 @@ def generate_todays_post() -> str:
 
     try:
         df = pd.read_csv("D:\\keiba_ai\\simulation_2025.csv",
-                         encoding="utf-8-sig")
+                         encoding="utf-8-sig", on_bad_lines="skip")
     except FileNotFoundError:
         print("❌ simulation_2025.csv が見つかりません")
         return ""

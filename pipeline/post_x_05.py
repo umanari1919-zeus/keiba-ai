@@ -66,8 +66,8 @@ def generate_and_post():
     
     # 予想結果を読み込む
     try:
-        df = pd.read_csv("D:\\keiba_ai\\simulation_2025.csv", 
-                         encoding="utf-8-sig")
+        df = pd.read_csv("D:\\keiba_ai\\simulation_2025.csv",
+                         encoding="utf-8-sig", on_bad_lines="skip")
     except:
         print("❌ simulation_2025.csvが見つかりません")
         return

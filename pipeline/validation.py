@@ -82,7 +82,7 @@ def walk_forward_validation():
     print("="*50)
     
     df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
-                     encoding="utf-8-sig", low_memory=False)
+                     encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     df = df.fillna(0)
     
     features = [f for f in FEATURES if f in df.columns]
