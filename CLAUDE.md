@@ -5,16 +5,20 @@
 ## クイックスタート
 
 ```bash
-python run_all.py --morning               # 朝の予想モード v2（並列実行・約3分）← 毎朝これ
-python run_all.py --morning --skip-social # 朝の予想モード（SNS投稿なし）
+# ── pipeline_v2（推奨）──────────────────────────────────────────────────
+python run_all.py --v2                         # 日次 DAG（16ステップ）← 毎朝これ
+python run_all.py --v2-weekly                  # 週次 DAG（9ステップ）← 毎週日曜
+python canary_run.py                           # エンドツーエンド ドライラン検証（30/30 PASS）
+python scheduler.py                            # 9ジョブ自動スケジューラー起動
+
+# ── 旧方式（互換維持）────────────────────────────────────────────────────
+python run_all.py --morning               # 朝の予想モード（SNS投稿あり）
 python run_all.py --results               # 夕方モード: 確定結果取得 → roi_tracker 更新
 python run_all.py --skip-fetch --skip-train   # 既存モデルで予想のみ
-python run_all.py                              # 全ステップ（DB取得 → 学習 → 投稿）
-python scheduler.py                            # 土日 08:00 自動実行（--morning 使用）
 streamlit run pipeline/dashboard_15.py        # ダッシュボード http://localhost:8501
 ```
 
-`run_all.py` のフラグ: `--morning` `--results` `--evening` `--skip-fetch` `--skip-train` `--skip-adv` `--skip-nn` `--skip-rl` `--skip-social` `--full-optuna`
+`run_all.py` のフラグ: `--v2` `--v2-weekly` `--morning` `--results` `--evening` `--skip-fetch` `--skip-train` `--skip-adv` `--skip-nn` `--skip-rl` `--skip-social` `--full-optuna`
 
 ### 買い目シート
 ```bash
@@ -23,6 +27,58 @@ python pipeline/morning_report.py 20260426     # 指定日
 python pipeline/morning_report.py --no-ollama  # Ollama解説スキップ
 ```
 出力先: `reports/morning_{date}.txt`
+
+## アーキテクチャ概要（v2）
+
+```
+run_all.py --v2
+  └─ pipeline_v2/00_orchestrator.py  ← dag_spec.json を読み込みトポロジカル実行
+       ├─ 01_ingest.py      → agents/ingest_agent.py
+       ├─ 02_normalize.py   → agents/normalizer_agent.py
+       ├─ 03_feature_gen.py → agents/feature_agent.py（10スクリプト統合）
+       ├─ 04_batch_inference.py → agents/batch_inference_agent.py
+       ├─ 05_explain.py     → agents/llm_explain_agent.py
+       ├─ 06_publish.py     → agents/publish_agent.py
+       ├─ 07_trade.py       → agents/trading_agent.py + market_agent.py
+       ├─ 08_upsetscore.py  （直接実行）
+       ├─ 09_monitor.py     → agents/monitor_agent.py + ops_agent.py
+       ├─ 10_rag_index.py   → agents/rag_store.py
+       ├─ 14_anomaly.py     → agents/anomaly_agent.py（CRITICAL→終了コード2）
+       ├─ 15_roi_track.py   → agents/roi_tracker_agent.py
+       ├─ 16_portfolio.py   → agents/portfolio_agent.py
+       ├─ 17_race_select.py → agents/race_selector_agent.py
+       ├─ 18_condition_adjust.py → agents/condition_adjuster_agent.py
+       └─ 20_bankroll.py    → agents/bankroll_agent.py（DD超過→終了コード2）
+
+run_all.py --v2-weekly
+  └─ pipeline_v2/00_orchestrator_weekly.py ← dag_spec_weekly.json
+       ├─ 11_weekly_train.py  → agents/train_agent.py
+       ├─ 13_backtest.py      → agents/backtest_agent.py
+       ├─ 21_backtest_engine.py → agents/backtest_engine_agent.py
+       ├─ 10_rag_index.py     → agents/rag_store.py
+       ├─ 08_upsetscore.py    （直接）
+       ├─ 22_statistics.py    → agents/statistics_agent.py
+       ├─ 12_knowledge_update.py → agents/knowledge_agent.py
+       ├─ 19_auto_learn.py    → agents/auto_learn_agent.py
+       └─ 09_monitor.py       → agents/monitor_agent.py
+```
+
+### agents/ レイヤー（30エージェント）
+
+全エージェントは `agents/base_agent.py` の `BaseAgent` を継承し、
+`trace_id` / SHA-256 ハッシュ / 監査ログ / `dry_run` モードを共通提供する。
+
+| カテゴリ | エージェント |
+|---|---|
+| インフラ | BaseAgent, SchemaRegistry, AuditLogger, RAGStore |
+| データ | IngestAgent, NormalizerAgent, FeatureAgent |
+| 推論 | BatchInferenceAgent, LLMExplainAgent, MultiAgentV2Agent |
+| 売買 | TradingAgent, MarketAgent, PortfolioAgent, BankrollAgent |
+| 分析 | AnomalyAgent, StatisticsAgent, OddsMonitorAgent, OddsScraperAgent |
+| 戦略 | RaceSelectorAgent, ConditionAdjusterAgent, BacktestAgent, BacktestEngineAgent |
+| 学習 | TrainAgent, AutoLearnAgent, KnowledgeAgent |
+| 監視 | MonitorAgent, OpsAgent, RoiTrackerAgent |
+| 配信 | PublishAgent, SocialBotAgent |
 
 ## パイプライン構成（pipeline/）
 

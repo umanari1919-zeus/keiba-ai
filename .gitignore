@@ -1,34 +1,49 @@
-# シークレット
+# ─── シークレット ───────────────────────────────────────────
 .env
 .env.txt
+archive/secret_envs/
+archive/
 
-# 大容量データ・モデルファイル
+# ─── 大容量データ・モデルファイル ───────────────────────────
 keiba_data.csv
 keiba_data_features.csv
 keiba_data_features_backup.csv
 *.pkl
+*.pth
 *.sqlite
+*.parquet
 
-# パイプライン実行時の生成ファイル
+# ─── パイプライン実行時の生成ファイル ───────────────────────
 data/
 shap_output/
 pedigree_output/
 catboost_info/
 simulation_*.csv
+ev_analysis_*.csv
+portfolio_*.csv
 today_post.txt
 run_all_err*.txt
 run_all_out*.txt
-D:keiba_aidataauto_run_log.txt
 
-# Pythonキャッシュ
+# ─── pipeline_v2 実行ログ・レポート ─────────────────────────
+pipeline_v2/logs/
+logs/
+canary_report_*.json
+canary_*.log
+
+# ─── Python キャッシュ ──────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
+dist/
+build/
 
-# Claudeセッションデータ
+# ─── Claude セッションデータ ────────────────────────────────
 .claude/
 
-# secrets
-archive/secret_envs/
-.env
-archive/
+# ─── IDE / OS ───────────────────────────────────────────────
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
