@@ -1926,7 +1926,12 @@ with tab_today:
                  os.path.join(BASE, "pipeline", "odds_scraper_36.py")],
                 capture_output=True, text=True, cwd=BASE, timeout=120
             )
-            st.success("取得完了") if res.returncode == 0 else st.error("取得失敗")
+            if res.returncode == 0:
+                st.success("取得完了")
+            else:
+                st.error(f"取得失敗 (rc={res.returncode})")
+                if res.stderr:
+                    st.code(res.stderr[-1500:], language="text")
             st.cache_data.clear()
 
     if c3.button("📤 SNS 投稿", use_container_width=True):
@@ -1938,7 +1943,12 @@ with tab_today:
                      os.path.join(BASE, "pipeline", "social_bot_27.py")],
                     capture_output=True, text=True, cwd=BASE, timeout=60
                 )
-                st.success("投稿完了") if res.returncode == 0 else st.error("投稿失敗")
+                if res.returncode == 0:
+                    st.success("投稿完了")
+                else:
+                    st.error(f"投稿失敗 (rc={res.returncode})")
+                    if res.stderr:
+                        st.code(res.stderr[-1500:], language="text")
 
 
 # ════════════════════════════════════════════════════════════
