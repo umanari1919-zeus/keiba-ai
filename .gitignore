@@ -27,3 +27,7 @@ __pycache__/
 
 # Claudeセッションデータ
 .claude/
+
+# secrets
+archive/secret_envs/
+.env
