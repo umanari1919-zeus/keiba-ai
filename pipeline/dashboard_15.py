@@ -1320,7 +1320,7 @@ with tab_bt:
 
         c1,c2,c3,c4 = st.columns(4)
         with c1:
-            st.markdown(f"""<div class="kpi"><div class="kpi-sub">平均OOS ROI</div>
+            st.markdown(f"""<div class="kpi"><div class="kpi-sub">平均 検証期間ROI</div>
               <div class="kpi-val" style="color:#3fb950">{wf.get('avg_roi',0):+.1f}%</div></div>""", unsafe_allow_html=True)
         with c2:
             st.markdown(f"""<div class="kpi"><div class="kpi-sub">平均的中率</div>
@@ -1337,7 +1337,7 @@ with tab_bt:
               <div class="kpi-val" style="color:#58a6ff">{n_pos}<span style="font-size:1rem">/{n_folds}</span></div></div>""", unsafe_allow_html=True)
 
         if not folds_df.empty:
-            st.markdown("<div class='sec-head'>📅 折ごとの成績 (アウトオブサンプル)</div>", unsafe_allow_html=True)
+            st.markdown("<div class='sec-head'>📅 折ごとの成績（検証期間の成績）</div>", unsafe_allow_html=True)
             show = [c for c in ['test_year','roi','hit_rate','max_dd','n_bets'] if c in folds_df.columns]
             st.dataframe(folds_df[show].style.format({
                 'roi':'{:+.1f}%','hit_rate':'{:.1f}%','max_dd':'{:.1f}%','n_bets':'{:,}'
@@ -1345,7 +1345,7 @@ with tab_bt:
 
             if PLOTLY and 'roi' in folds_df.columns:
                 fig = px.bar(folds_df, x='test_year', y='roi',
-                             title="年別 OOS ROI (アウトオブサンプル)",
+                             title="年別 検証期間ROI",
                              color='roi', color_continuous_scale=['#f85149','#3fb950'])
                 fig.add_hline(y=0, line_dash='dash', line_color='#8b949e')
                 fig.update_layout(**_plotly_theme(), height=260, coloraxis_showscale=False)
