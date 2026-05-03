@@ -734,10 +734,11 @@ _render_status_strip()
 
 # ── タブ ────────────────────────────────────────────────────
 tabs = st.tabs([
-    "⚡ ライブ予想", "📡 リアルタイム監視", "📊 成績サマリー", "💰 資金管理",
-    "🏇 馬券戦略", "📈 モデル検証", "🔬 SHAP", "🧬 血統", "🔄 バックテスト", "📚 知識ベース", "🐎 レース種別"
+    "📋 今日の予想", "⚡ ライブ予想", "📡 リアルタイム監視", "📊 成績サマリー", "💰 資金管理",
+    "🏇 馬券戦略", "📈 モデル検証", "🔬 SHAP", "🧬 血統", "🔄 バックテスト", "📚 知識ベース", "🐎 レース種別",
+    "🤖 エージェント監視",
 ])
-tab_live, tab_monitor, tab_sum, tab_bk, tab_strat, tab_model, tab_shap, tab_blood, tab_bt, tab_kb, tab_rt = tabs
+tab_today, tab_live, tab_monitor, tab_sum, tab_bk, tab_strat, tab_model, tab_shap, tab_blood, tab_bt, tab_kb, tab_rt, tab_agents = tabs
 
 
 # ════════════════════════════════════════════════════════════
@@ -1776,3 +1777,346 @@ with tab_rt:
                 except Exception as e:
                     st.error(f"Error: {e}")
 
+
+# ════════════════════════════════════════════════════════════
+# TAB 12: 今日の予想
+# ════════════════════════════════════════════════════════════
+with tab_today:
+    import psycopg2, subprocess, sys as _sys
+
+    today_dt  = datetime.now()
+    today_str = today_dt.strftime("%Y%m%d")
+
+    # ── データ読み込みヘルパー ──────────────────────────────
+    @st.cache_data(ttl=120)
+    def _load_today_ev():
+        """ev_analysis_YYYY.csv から当日分を抽出"""
+        path = os.path.join(BASE, f"ev_analysis_{YEAR}.csv")
+        if not os.path.exists(path):
+            return pd.DataFrame()
+        df = pd.read_csv(path, encoding="utf-8-sig", on_bad_lines="skip", low_memory=False)
+        if "race_code" in df.columns:
+            df = df[df["race_code"].astype(str).str.startswith(today_str)]
+        return df
+
+    @st.cache_data(ttl=120)
+    def _load_race_ranking():
+        path = os.path.join(DATA_DIR, f"race_ranking_{YEAR}.csv")
+        if not os.path.exists(path):
+            return pd.DataFrame()
+        return pd.read_csv(path, encoding="utf-8-sig", on_bad_lines="skip")
+
+    @st.cache_data(ttl=60)
+    def _load_odds_snapshot():
+        path = os.path.join(DATA_DIR, f"odds_snapshot_{today_str}.json")
+        if not os.path.exists(path):
+            return {}
+        try:
+            return json.loads(open(path, encoding="utf-8").read())
+        except Exception:
+            return {}
+
+    ev_df   = _load_today_ev()
+    rank_df = _load_race_ranking()
+    snap    = _load_odds_snapshot()
+
+    # ── ヘッダー KPI ────────────────────────────────────────
+    st.markdown(f"### 📋 {today_dt.strftime('%Y年%m月%d日（%a）')} 本日の推奨ベット")
+
+    col_a, col_b, col_c, col_d = st.columns(4)
+    n_picks  = len(ev_df) if not ev_df.empty else 0
+    n_gradeS = len(rank_df[rank_df["grade"] == "S"]) if not rank_df.empty and "grade" in rank_df.columns else 0
+    n_gradeA = len(rank_df[rank_df["grade"] == "A"]) if not rank_df.empty and "grade" in rank_df.columns else 0
+
+    col_a.metric("推奨ベット数",   f"{n_picks} 頭")
+    col_b.metric("Grade S レース", f"{n_gradeS} R")
+    col_c.metric("Grade A レース", f"{n_gradeA} R")
+    avg_ev = float(ev_df["ev"].mean()) if not ev_df.empty and "ev" in ev_df.columns else 0.0
+    col_d.metric("平均EV",         f"+{avg_ev*100:.1f}%")
+
+    st.divider()
+
+    # ── 推奨ベット一覧テーブル ──────────────────────────────
+    if ev_df.empty:
+        st.info("本日の予想データがありません。`python run_all.py --v2` を実行してください。")
+    else:
+        # 表示カラム選択
+        show_cols = []
+        for c in ["race_code", "bamei", "odds", "ev", "win_probability",
+                  "kelly_bet", "bet_amount", "grade"]:
+            if c in ev_df.columns:
+                show_cols.append(c)
+
+        disp = ev_df[show_cols].copy()
+        rename_map = {
+            "race_code":       "レースコード",
+            "bamei":           "馬名",
+            "odds":            "オッズ",
+            "ev":              "EV",
+            "win_probability": "勝率",
+            "kelly_bet":       "Kelly推奨",
+            "bet_amount":      "推奨ベット額",
+            "grade":           "グレード",
+        }
+        disp = disp.rename(columns={k: v for k, v in rename_map.items() if k in disp.columns})
+
+        if "EV" in disp.columns:
+            disp["EV"] = disp["EV"].apply(lambda x: f"+{x*100:.1f}%" if pd.notna(x) else "—")
+        if "勝率" in disp.columns:
+            disp["勝率"] = disp["勝率"].apply(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "—")
+        if "推奨ベット額" in disp.columns:
+            disp["推奨ベット額"] = disp["推奨ベット額"].apply(
+                lambda x: f"¥{int(x):,}" if pd.notna(x) and x > 0 else "—")
+        if "オッズ" in disp.columns:
+            disp["オッズ"] = disp["オッズ"].apply(lambda x: f"{x:.1f}倍" if pd.notna(x) else "—")
+
+        if "レースコード" in disp.columns:
+            disp["レース"] = disp["レースコード"].astype(str).apply(fmt_race)
+            disp = disp.drop(columns=["レースコード"])
+            cols_order = ["レース"] + [c for c in disp.columns if c != "レース"]
+            disp = disp[cols_order]
+
+        st.dataframe(disp, use_container_width=True, height=400)
+
+        # 合計ベット額
+        total_bet = ev_df["bet_amount"].sum() if "bet_amount" in ev_df.columns else 0
+        if total_bet > 0:
+            st.markdown(f"**本日合計推奨ベット額: ¥{int(total_bet):,}**")
+
+    # ── オッズスナップショット ──────────────────────────────
+    st.divider()
+    st.markdown("#### 最新オッズスナップショット")
+    if snap:
+        snap_time = snap.get("timestamp", "")
+        st.caption(f"取得時刻: {snap_time}")
+        races = snap.get("races", snap)
+        if isinstance(races, dict):
+            sel_race = st.selectbox("レース選択", list(races.keys())[:20])
+            race_data = races.get(sel_race, {})
+            if isinstance(race_data, dict) and "horses" in race_data:
+                hdf = pd.DataFrame(race_data["horses"])
+                st.dataframe(hdf, use_container_width=True, height=250)
+            else:
+                st.json(race_data)
+    else:
+        st.info(f"オッズスナップショット未取得 (`data/odds_snapshot_{today_str}.json`)")
+
+    # ── クイック実行ボタン ──────────────────────────────────
+    st.divider()
+    st.markdown("#### クイック実行")
+    c1, c2, c3 = st.columns(3)
+    if c1.button("▶ 日次 DAG 実行", use_container_width=True):
+        with st.spinner("pipeline_v2/00_orchestrator.py を実行中..."):
+            res = subprocess.run(
+                [_sys.executable, "-X", "utf8",
+                 os.path.join(BASE, "pipeline_v2", "00_orchestrator.py")],
+                capture_output=True, text=True, cwd=BASE, timeout=600
+            )
+            if res.returncode == 0:
+                st.success("完了しました")
+                st.cache_data.clear()
+            else:
+                st.error(f"失敗 (rc={res.returncode})")
+                st.code(res.stderr[-2000:] if res.stderr else "")
+
+    if c2.button("📸 オッズ取得", use_container_width=True):
+        with st.spinner("odds_scraper_36.py を実行中..."):
+            res = subprocess.run(
+                [_sys.executable, "-X", "utf8",
+                 os.path.join(BASE, "pipeline", "odds_scraper_36.py")],
+                capture_output=True, text=True, cwd=BASE, timeout=120
+            )
+            st.success("取得完了") if res.returncode == 0 else st.error("取得失敗")
+            st.cache_data.clear()
+
+    if c3.button("📤 SNS 投稿", use_container_width=True):
+        st.warning("SNS 投稿は `social_bot_agent` 経由で実行します。本当に投稿しますか？")
+        if st.button("✅ 投稿を確認して実行", key="confirm_sns"):
+            with st.spinner("social_bot_27.py を実行中..."):
+                res = subprocess.run(
+                    [_sys.executable, "-X", "utf8",
+                     os.path.join(BASE, "pipeline", "social_bot_27.py")],
+                    capture_output=True, text=True, cwd=BASE, timeout=60
+                )
+                st.success("投稿完了") if res.returncode == 0 else st.error("投稿失敗")
+
+
+# ════════════════════════════════════════════════════════════
+# TAB 13: エージェント監視
+# ════════════════════════════════════════════════════════════
+with tab_agents:
+    import psycopg2
+
+    @st.cache_data(ttl=30)
+    def _load_audit_log(limit: int = 200):
+        try:
+            conn = psycopg2.connect(
+                host="127.0.0.1", port=5433, dbname="mykeibadb",
+                user="postgres", password="zeus"
+            )
+            df = pd.read_sql(f"""
+                SELECT
+                    agent_id,
+                    status,
+                    run_tag,
+                    trace_id,
+                    started_at,
+                    finished_at,
+                    EXTRACT(EPOCH FROM (finished_at - started_at))::numeric(8,2) AS elapsed_sec,
+                    error_message
+                FROM audit_log
+                ORDER BY started_at DESC
+                LIMIT {limit}
+            """, conn)
+            conn.close()
+            return df
+        except Exception as e:
+            return pd.DataFrame({"error": [str(e)]})
+
+    @st.cache_data(ttl=30)
+    def _load_agent_summary():
+        """エージェントごとの最新状態サマリー"""
+        try:
+            conn = psycopg2.connect(
+                host="127.0.0.1", port=5433, dbname="mykeibadb",
+                user="postgres", password="zeus"
+            )
+            df = pd.read_sql("""
+                SELECT
+                    agent_id,
+                    COUNT(*) FILTER (WHERE status='success') AS ok,
+                    COUNT(*) FILTER (WHERE status='error')   AS ng,
+                    MAX(started_at)                          AS last_run,
+                    AVG(EXTRACT(EPOCH FROM (finished_at - started_at)))::numeric(6,2) AS avg_sec
+                FROM audit_log
+                WHERE started_at >= NOW() - INTERVAL '7 days'
+                GROUP BY agent_id
+                ORDER BY agent_id
+            """, conn)
+            conn.close()
+            return df
+        except Exception as e:
+            return pd.DataFrame({"error": [str(e)]})
+
+    @st.cache_data(ttl=30)
+    def _load_model_registry():
+        try:
+            conn = psycopg2.connect(
+                host="127.0.0.1", port=5433, dbname="mykeibadb",
+                user="postgres", password="zeus"
+            )
+            df = pd.read_sql("""
+                SELECT model_id, status, train_date, avg_roi, spearman_corr, verdict
+                FROM model_registry
+                ORDER BY train_date DESC
+                LIMIT 10
+            """, conn)
+            conn.close()
+            return df
+        except Exception as e:
+            return pd.DataFrame({"error": [str(e)]})
+
+    # ── ヘッダー ────────────────────────────────────────────
+    st.markdown("### 🤖 エージェント監視ダッシュボード")
+    st.caption(f"自動更新: 30秒 | audit_log / model_registry | {datetime.now().strftime('%H:%M:%S')}")
+
+    if st.button("🔄 今すぐ更新"):
+        st.cache_data.clear()
+        st.rerun()
+
+    # ── エージェントサマリー ────────────────────────────────
+    st.markdown("#### 直近7日 エージェント稼働状況")
+    sum_df = _load_agent_summary()
+
+    if "error" in sum_df.columns:
+        st.error(f"DB接続失敗: {sum_df['error'].iloc[0]}")
+    elif sum_df.empty:
+        st.info("audit_log にデータがありません。`canary_run.py` を実行してください。")
+    else:
+        # ステータスバッジ列追加
+        def _badge(row):
+            if row["ng"] > 0:
+                return "🔴 エラーあり"
+            if row["ok"] == 0:
+                return "⚪ 未実行"
+            return "🟢 正常"
+
+        sum_df["状態"] = sum_df.apply(_badge, axis=1)
+        sum_df["最終実行"] = pd.to_datetime(sum_df["last_run"]).dt.strftime("%m/%d %H:%M")
+        sum_df["平均秒数"] = sum_df["avg_sec"].apply(lambda x: f"{x:.1f}s" if pd.notna(x) else "—")
+
+        disp = sum_df[["agent_id", "状態", "ok", "ng", "最終実行", "平均秒数"]].rename(
+            columns={"agent_id": "エージェント", "ok": "成功数", "ng": "失敗数"}
+        )
+        st.dataframe(disp, use_container_width=True, height=500)
+
+    # ── auto_stop / アラート状態 ────────────────────────────
+    st.divider()
+    st.markdown("#### システムアラート状態")
+
+    canary_path = os.path.join(BASE, ".claude", "worktrees", "brave-kilby-e79e98",
+                               "logs")
+    reports = sorted(glob.glob(os.path.join(canary_path, "canary_report_*.json")),
+                     reverse=True)[:1]
+
+    if reports:
+        try:
+            rpt = json.loads(open(reports[0], encoding="utf-8").read())
+            steps = rpt.get("steps", [])
+            failed = [s for s in steps if not s.get("ok")]
+            ts = rpt.get("timestamp", "")[:19].replace("T", " ")
+            if failed:
+                st.error(f"⚠️ canary 最終実行 {ts} — {len(failed)} ステップ失敗")
+                for s in failed:
+                    st.markdown(f"- `{s.get('name', '?')}`: {s.get('detail', '')}")
+            else:
+                total = len(steps)
+                st.success(f"✅ canary 最終実行 {ts} — {total}/{total} PASS")
+        except Exception as e:
+            st.warning(f"canary レポート読み込み失敗: {e}")
+    else:
+        st.info("canary レポートが見つかりません。`python canary_run.py` を実行してください。")
+
+    # ── 直近実行ログ ────────────────────────────────────────
+    st.divider()
+    st.markdown("#### 直近実行ログ（audit_log）")
+
+    log_limit = st.slider("表示件数", 20, 200, 50, 10)
+    audit_df  = _load_audit_log(log_limit)
+
+    if "error" in audit_df.columns:
+        st.error(f"DB接続失敗: {audit_df['error'].iloc[0]}")
+    elif audit_df.empty:
+        st.info("ログなし")
+    else:
+        def _status_icon(s):
+            return {"success": "🟢", "error": "🔴", "start": "🔵"}.get(str(s), "⚪")
+
+        audit_df[""] = audit_df["status"].apply(_status_icon)
+        audit_df["開始時刻"] = pd.to_datetime(audit_df["started_at"]).dt.strftime("%m/%d %H:%M:%S")
+        audit_df["経過(s)"]  = audit_df["elapsed_sec"].apply(
+            lambda x: f"{x:.1f}" if pd.notna(x) else "—")
+
+        show = audit_df[["", "agent_id", "status", "開始時刻", "経過(s)",
+                          "trace_id", "error_message"]].rename(
+            columns={"agent_id": "エージェント", "status": "状態",
+                     "trace_id": "trace_id", "error_message": "エラー"})
+        st.dataframe(show, use_container_width=True, height=400)
+
+    # ── model_registry ──────────────────────────────────────
+    st.divider()
+    st.markdown("#### モデルレジストリ（直近10件）")
+    mreg_df = _load_model_registry()
+
+    if "error" in mreg_df.columns:
+        st.error(f"DB接続失敗: {mreg_df['error'].iloc[0]}")
+    elif mreg_df.empty:
+        st.info("model_registry にデータがありません")
+    else:
+        if "avg_roi" in mreg_df.columns:
+            mreg_df["avg_roi"] = mreg_df["avg_roi"].apply(
+                lambda x: f"+{x:.1f}%" if pd.notna(x) and x >= 0 else f"{x:.1f}%" if pd.notna(x) else "—")
+        if "spearman_corr" in mreg_df.columns:
+            mreg_df["spearman_corr"] = mreg_df["spearman_corr"].apply(
+                lambda x: f"{x:.4f}" if pd.notna(x) else "—")
+        st.dataframe(mreg_df, use_container_width=True, height=300)
