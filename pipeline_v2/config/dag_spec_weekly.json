@@ -1,66 +1,38 @@
 {
-  "artifact_type": "orchestrator_dag",
-  "prompt_id": "core_umanari_v1_weekly",
-  "version": "1.1.0",
-  "description": "週次バッチ: モデル再学習 → RAG再構築 → UpsetScore更新 → 統計分析 → EV×Kellyグリッドサーチ",
-  "auto_stop_conditions": {
-    "mismatch_rate_gt": 0.02,
-    "quarantine_24h_increase_gt": 50,
-    "spearman_drop_pct": 0.2
-  },
-  "dag": [
+  "dag_id": "umanari_weekly",
+  "description": "週次バッチ: モデル再学習 → RAG再構築・UpsetScore更新 → 知識ベース更新 → 監視",
+  "steps": [
     {
-      "task_id": "weekly_train",
-      "script": "11_weekly_train.py",
-      "description": "モデル再学習 + model_registry 登録"
+      "id": "weekly_train",
+      "script": "pipeline_v2/11_weekly_train.py",
+      "description": "週次モデル再学習（TrainAgent + model_registry登録）",
+      "depends_on": []
     },
     {
-      "task_id": "backtest",
-      "script": "13_backtest.py",
-      "description": "ウォークフォワード・バックテスト → 汎化性能評価",
+      "id": "rag_rebuild",
+      "script": "pipeline_v2/10_rag_index.py",
+      "description": "RAGStore インデックス再構築",
+      "depends_on": ["weekly_train"],
+      "args": ["--limit", "50000"]
+    },
+    {
+      "id": "upsetscore",
+      "script": "pipeline_v2/08_upsetscore.py",
+      "description": "UpsetScore 再算出 → race_metrics UPSERT",
       "depends_on": ["weekly_train"]
     },
     {
-      "task_id": "backtest_engine",
-      "script": "21_backtest_engine.py",
-      "description": "EV×Kelly グリッドサーチ → 最適パラメータ探索",
-      "depends_on": ["backtest"]
-    },
-    {
-      "task_id": "weekly_rag_rebuild",
-      "script": "10_rag_index.py",
-      "description": "RAG インデックス全件再構築",
-      "depends_on": ["backtest"]
-    },
-    {
-      "task_id": "weekly_upsetscore",
-      "script": "08_upsetscore.py",
-      "description": "race_metrics upset_score 再算出",
-      "depends_on": ["weekly_train"]
-    },
-    {
-      "task_id": "statistics",
-      "script": "22_statistics.py",
-      "description": "ベイズ特徴選択・PCA・クラスタリング・モンテカルロリスク分析",
-      "depends_on": ["weekly_train"]
-    },
-    {
-      "task_id": "knowledge_update",
-      "script": "12_knowledge_update.py",
+      "id": "knowledge_update",
+      "script": "pipeline_v2/12_knowledge_update.py",
       "description": "知識ベース更新（KnowledgeAgent, days=7）",
-      "depends_on": ["weekly_rag_rebuild", "weekly_upsetscore", "backtest_engine", "statistics"]
+      "depends_on": ["rag_rebuild", "upsetscore"],
+      "args": ["--days", "7"]
     },
     {
-      "task_id": "auto_learn",
-      "script": "19_auto_learn.py",
-      "description": "パフォーマンス評価 → 要再学習時に TrainAgent 起動",
+      "id": "weekly_monitor",
+      "script": "pipeline_v2/09_monitor.py",
+      "description": "週次監視・OpsAgent ヘルスチェック・auto_stop 判定",
       "depends_on": ["knowledge_update"]
-    },
-    {
-      "task_id": "weekly_monitor",
-      "script": "09_monitor.py",
-      "description": "週次パフォーマンス確認",
-      "depends_on": ["auto_learn"]
     }
   ]
 }
