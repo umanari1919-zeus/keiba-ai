@@ -70,12 +70,13 @@ class IngestAgent(BaseAgent):
             log.warning("スクリプトが見つかりません: %s", script)
             return False
 
+        env = {**os.environ, "PYTHONUTF8": "1", "PYTHONPATH": str(BASE_DIR)}
         result = subprocess.run(
-            [sys.executable, str(script),
+            [sys.executable, "-X", "utf8", str(script),
              "--trace_id", meta.trace_id,
              "--run_tag",  meta.run_tag],
             capture_output=True, text=True, encoding="utf-8",
-            cwd=str(BASE_DIR),
+            cwd=str(BASE_DIR), env=env,
         )
         if result.stdout:
             log.info(result.stdout.rstrip())

@@ -194,7 +194,7 @@ def run_optuna_advanced(n_trials_lgb=80, n_trials_xgb=60, n_trials_cb=50):
     # アンサンブル
     lgb_proba = lgb_model.predict_proba(X_vl)
     xgb_proba = xgb_model.predict_proba(X_vl)
-    cb_proba  = cb_model.predict_proba(X_vl)
+    cb_proba  = (cb_model.predict_proba(X_vl) if cb_model is not None else 0)
 
     # 最適重みを既存 model_v8.pkl から取得（あれば）
     w = saved.get('ensemble_weights', [0.5, 0.3, 0.2])

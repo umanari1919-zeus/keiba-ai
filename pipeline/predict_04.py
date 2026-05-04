@@ -90,8 +90,13 @@ def predict_today(date_str: str = None) -> list:
 
     lgb_p = lgb_model.predict_proba(X)
     xgb_p = xgb_model.predict_proba(X)
-    cb_p  = cb_model.predict_proba(X)
-    ensemble_p = weights[0] * lgb_p + weights[1] * xgb_p + weights[2] * cb_p
+    if cb_model is not None:
+        cb_p  = cb_model.predict_proba(X)
+        ensemble_p = weights[0] * lgb_p + weights[1] * xgb_p + weights[2] * cb_p
+    else:
+        # CatBoost未学習: LGB+XGB で再正規化
+        w_sum = weights[0] + weights[1]
+        ensemble_p = (weights[0] * lgb_p + weights[1] * xgb_p) / (w_sum or 1.0)
 
     df["pred_chakujun"] = le.inverse_transform(ensemble_p.argmax(axis=1))
     # 1着確率
@@ -177,13 +182,16 @@ def simulate_recovery(year):
     # 加重アンサンブル予測
     lgb_proba = lgb_model.predict_proba(X_test)
     xgb_proba = xgb_model.predict_proba(X_test)
-    cb_proba = cb_model.predict_proba(X_test)
-    
-    ensemble_proba = (
-        weights[0] * lgb_proba +
-        weights[1] * xgb_proba +
-        weights[2] * cb_proba
-    )
+    if cb_model is not None:
+        cb_proba = cb_model.predict_proba(X_test)
+        ensemble_proba = (
+            weights[0] * lgb_proba +
+            weights[1] * xgb_proba +
+            weights[2] * cb_proba
+        )
+    else:
+        w_sum = weights[0] + weights[1]
+        ensemble_proba = (weights[0] * lgb_proba + weights[1] * xgb_proba) / (w_sum or 1.0)
     test_df['pred_chakujun'] = le.inverse_transform(
         ensemble_proba.argmax(axis=1)
     )

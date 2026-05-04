@@ -35,7 +35,7 @@ def simulate_recovery_wf(test_df, lgb_model, xgb_model, cb_model, le, features):
     X_test = test_df[features]
     lgb_proba = lgb_model.predict_proba(X_test)
     xgb_proba = xgb_model.predict_proba(X_test)
-    cb_proba = cb_model.predict_proba(X_test)
+    cb_proba = (cb_model.predict_proba(X_test) if cb_model is not None else 0)
     
     # probsの列数を揃える
     min_cols = min(lgb_proba.shape[1], xgb_proba.shape[1], cb_proba.shape[1])

@@ -124,7 +124,7 @@ def run_portfolio_optimization(year=2025):
     ensemble_proba = (
         weights[0] * lgb_model.predict_proba(X_test) +
         weights[1] * xgb_model.predict_proba(X_test) +
-        weights[2] * cb_model.predict_proba(X_test)
+        weights[2] * (cb_model.predict_proba(X_test) if cb_model is not None else 0)
     )
 
     ev_df = build_ev_dataframe(test_df, ensemble_proba, le)

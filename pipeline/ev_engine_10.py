@@ -210,11 +210,14 @@ def run_ev_analysis(year=2025, threshold=EV_THRESHOLD):
         X_test[col] = pd.to_numeric(X_test[col], errors="coerce").fillna(0)
 
     try:
-        ensemble_proba = (
-            weights[0] * lgb_model.predict_proba(X_test) +
-            weights[1] * xgb_model.predict_proba(X_test) +
-            weights[2] * cb_model.predict_proba(X_test)
-        )
+        lgb_p = lgb_model.predict_proba(X_test)
+        xgb_p = xgb_model.predict_proba(X_test)
+        if cb_model is not None:
+            ensemble_proba = (weights[0] * lgb_p + weights[1] * xgb_p +
+                              weights[2] * cb_model.predict_proba(X_test))
+        else:
+            w_sum = weights[0] + weights[1]
+            ensemble_proba = (weights[0] * lgb_p + weights[1] * xgb_p) / (w_sum or 1.0)
     except Exception as exc:
         raise RuntimeError(f"アンサンブル予測エラー: {exc}") from exc
 

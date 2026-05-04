@@ -59,7 +59,7 @@ def ensure_win_probability(df: pd.DataFrame) -> pd.DataFrame:
     lgb_p = lgb_model.predict_proba(X)
     xgb_p = xgb_model.predict_proba(X)
     if cb_model is not None:
-        cb_p = cb_model.predict_proba(X)
+        cb_p = (cb_model.predict_proba(X) if cb_model is not None else 0)
         ensemble_p = weights[0] * lgb_p + weights[1] * xgb_p + weights[2] * cb_p
     else:
         ensemble_p = weights[0] * lgb_p + weights[1] * xgb_p

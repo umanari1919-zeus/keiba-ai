@@ -598,7 +598,7 @@ def ml_ensemble_agent(state: AgentState) -> AgentState:
 
         lgb_p = lgb_model.predict_proba(X)
         xgb_p = xgb_model.predict_proba(X)
-        cb_p  = cb_model.predict_proba(X)
+        cb_p  = (cb_model.predict_proba(X) if cb_model is not None else 0)
 
         # NN モデルがあれば追加
         nn_path = f"{BASE_DIR}\\model_nn.pth"

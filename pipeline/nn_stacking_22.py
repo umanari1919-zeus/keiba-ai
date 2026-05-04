@@ -210,7 +210,7 @@ def train_nn_stacking():
     X_vl_df = pd.DataFrame(X_vl, columns=feats)
     lgb_proba = lgb_model.predict_proba(X_vl_df)
     xgb_proba = xgb_model.predict_proba(X_vl_df)
-    cb_proba  = cb_model.predict_proba(X_vl_df)
+    cb_proba  = (cb_model.predict_proba(X_vl_df) if cb_model is not None else 0)
 
     # 動的重み最適化
     print("\n  ⚖️ アンサンブル重み動的最適化中...")

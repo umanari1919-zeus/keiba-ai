@@ -89,7 +89,7 @@ def compute_ensemble_probas(lgb_model, xgb_model, cb_model, X, weights):
     """アンサンブル確率から勝率・連対率・複勝率の確率を算出する。"""
     lgb_p = lgb_model.predict_proba(X)
     xgb_p = xgb_model.predict_proba(X)
-    cb_p  = cb_model.predict_proba(X)
+    cb_p  = (cb_model.predict_proba(X) if cb_model is not None else 0)
     ens = weights[0] * lgb_p + weights[1] * xgb_p + weights[2] * cb_p
 
     win_prob     = ens[:, WIN_COL]

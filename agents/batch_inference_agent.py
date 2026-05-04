@@ -119,13 +119,16 @@ class BatchInferenceAgent(BaseAgent):
         return predictions
 
     def _run_script(self, rel_path: str, meta: AgentMeta) -> bool:
+        env = {**os.environ, "PYTHONUTF8": "1", "PYTHONPATH": str(BASE_DIR)}
         result = subprocess.run(
-            [sys.executable, str(BASE_DIR / rel_path),
+            [sys.executable, "-X", "utf8", str(BASE_DIR / rel_path),
              "--trace_id", meta.trace_id,
              "--run_tag",  meta.run_tag],
             capture_output=True, text=True, encoding="utf-8",
-            cwd=str(BASE_DIR),
+            cwd=str(BASE_DIR), env=env,
         )
         if result.stdout:
             log.info(result.stdout.rstrip())
+        if result.returncode != 0 and result.stderr:
+            log.error(result.stderr[-500:])
         return result.returncode == 0

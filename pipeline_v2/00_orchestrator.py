@@ -24,9 +24,11 @@ import pathlib
 from datetime import datetime, timezone
 
 # agents/ レイヤーを PATH に追加
-_WORKTREE = pathlib.Path(r"D:\keiba_ai\.claude\worktrees\brave-kilby-e79e98")
-if _WORKTREE.exists() and str(_WORKTREE) not in sys.path:
-    sys.path.insert(0, str(_WORKTREE))
+_BASE_DIR = pathlib.Path(r"D:\keiba_ai")
+# BASE_DIR を必ず先頭に (worktree より優先)
+if str(_BASE_DIR) in sys.path:
+    sys.path.remove(str(_BASE_DIR))
+sys.path.insert(0, str(_BASE_DIR))
 
 # ─── パス設定 ────────────────────────────────────────────────
 BASE        = pathlib.Path(__file__).parent
