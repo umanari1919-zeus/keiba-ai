@@ -1,0 +1,12 @@
+{
+  "metrics": {
+    "mismatch_rate": 0.0,
+    "quarantine_count": 0,
+    "spearman": 1.0,
+    "daily_roi": 0.0,
+    "consecutive_losses": 0
+  },
+  "alerts": [],
+  "auto_stop": false,
+  "timestamp": "2026-05-03T18:49:39.545203+00:00"
+}

@@ -95,6 +95,56 @@ def _call_ollama(bamei: str, odds: float, kishumei: str,
         return ""
 
 
+def _call_nvidia(bamei: str, odds: float, kishumei: str,
+                 barei: int, bataiju: int,
+                 zogen_sa: int, zogen_fugo: int) -> str:
+    """
+    NVIDIA NIM API でコメントを生成。
+    Ollama が使えない場合の無料代替。
+    NVIDIA_API_KEY が設定されていない場合は空文字を返す。
+    """
+    try:
+        api_key = os.getenv("NVIDIA_API_KEY")
+        if not api_key:
+            return ""
+
+        from openai import OpenAI
+        client = OpenAI(
+            base_url="https://integrate.api.nvidia.com/v1",
+            api_key=api_key
+        )
+
+        weight_str = (f"+{zogen_sa}kg増" if zogen_fugo == 1 and zogen_sa > 0
+                      else f"-{zogen_sa}kg減" if zogen_fugo == -1 and zogen_sa > 0
+                      else "前走同重")
+
+        prompt = (
+            f"馬名：{bamei}（{barei}歳）\n"
+            f"騎手：{kishumei}\n"
+            f"オッズ：{odds:.1f}倍\n"
+            f"馬体重：{bataiju}kg（{weight_str}）\n\n"
+            f"上記のデータをもとに、うまなり地蔵のペルソナで"
+            f"100文字以内のX投稿コメントを1つだけ書いてください。"
+        )
+
+        response = client.chat.completions.create(
+            model="meta/llama-3.1-70b-instruct",
+            messages=[
+                {"role": "system", "content": SYSTEM_PERSONA},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.8,
+            max_tokens=200
+        )
+        result = response.choices[0].message.content.strip()
+        if result:
+            print(f"  🟢 NVIDIA API生成: {len(result)}文字")
+        return result or ""
+    except Exception as e:
+        print(f"  [nvidia] comment skip: {e}")
+        return ""
+
+
 def _call_claude(bamei: str, odds: float, kishumei: str,
                  barei: int, bataiju: int,
                  zogen_sa: int, zogen_fugo: int) -> str:
@@ -202,8 +252,11 @@ def generate_comment(bamei: str, odds: float, kishumei: str,
         print(f"  ✅ ローカルキャッシュヒット: {bamei}")
         return cache[key]
 
-    # 優先順位: Ollama（無料・ローカル）→ Claude API（有料）→ テンプレート
+    # 優先順位: Ollama（無料・ローカル）→ NVIDIA API（無料枠）→ Claude API（有料）→ テンプレート
     comment = _call_ollama(bamei, odds, kishumei, barei, bataiju, zogen_sa, zogen_fugo)
+
+    if not comment:
+        comment = _call_nvidia(bamei, odds, kishumei, barei, bataiju, zogen_sa, zogen_fugo)
 
     if not comment:
         api_key = os.getenv("ANTHROPIC_API_KEY")

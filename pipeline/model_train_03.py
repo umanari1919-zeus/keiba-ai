@@ -273,7 +273,7 @@ def train_model():
 
     if len(df) > 8_000:
         print("⚡ 学習高速化: クラスごと上限付きサンプリングを適用")
-        cap_per_class = 300
+        cap_per_class = 1000
         sampled_idx = []
         for cls, grp in df.groupby("kakutei_chakujun", sort=False):
             if len(grp) > cap_per_class:
@@ -319,79 +319,95 @@ def train_model():
     # ① LightGBM
     print("\n🔍 LightGBM 学習中...")
     lgb_model = lgb.LGBMClassifier(
-        n_estimators=150,
-        learning_rate=0.03,
-        num_leaves=63,
-        min_child_samples=30,
-        subsample=0.85,
-        colsample_bytree=0.8,
+        n_estimators=800,
+        learning_rate=0.02,
+        num_leaves=127,
+        min_child_samples=20,
+        subsample=0.8,
+        subsample_freq=1,
+        colsample_bytree=0.75,
+        reg_alpha=0.1,
+        reg_lambda=1.0,
         random_state=42,
         n_jobs=-1,
         objective="multiclass",
         verbose=-1,
     )
     lgb_model.fit(
-        X_train,
-        y_train,
+        X_train, y_train,
         eval_set=[(X_val, y_val)],
         eval_metric="multi_logloss",
-        callbacks=[lgb.early_stopping(100, verbose=False)],
+        callbacks=[lgb.early_stopping(150, verbose=False),
+                   lgb.log_evaluation(period=100)],
     )
     lgb_pred = lgb_model.predict(X_test)
     lgb_acc = accuracy_score(y_test, lgb_pred)
-    print(f"🎯 LightGBM 正解率: {lgb_acc:.2%}")
+    print(f"🎯 LightGBM 正解率: {lgb_acc:.2%}  (best iter={lgb_model.best_iteration_})")
 
     # ② XGBoost
     print("\n🔍 XGBoost 学習中...")
     xgb_model = xgb.XGBClassifier(
-        n_estimators=150,
-        learning_rate=0.03,
+        n_estimators=800,
+        learning_rate=0.02,
         max_depth=7,
-        min_child_weight=2,
-        subsample=0.85,
-        colsample_bytree=0.8,
+        min_child_weight=3,
+        subsample=0.8,
+        colsample_bytree=0.75,
+        gamma=0.1,
+        reg_alpha=0.1,
+        reg_lambda=1.0,
         random_state=42,
         n_jobs=-1,
         verbosity=0,
         eval_metric="mlogloss",
         objective="multi:softprob",
         tree_method="hist",
+        early_stopping_rounds=150,
     )
     xgb_model.fit(
-        X_train,
-        y_train,
+        X_train, y_train,
         eval_set=[(X_val, y_val)],
         verbose=False,
     )
     xgb_pred = xgb_model.predict(X_test)
     xgb_acc = accuracy_score(y_test, xgb_pred)
-    print(f"🎯 XGBoost 正解率: {xgb_acc:.2%}")
+    print(f"🎯 XGBoost 正解率: {xgb_acc:.2%}  (best iter={xgb_model.best_iteration})")
 
     # ③ CatBoost
+    cb_model = None
+    cb_acc = float("nan")
     if cb_available:
         print("\n🔍 CatBoost 学習中...")
-        cb_model = cb.CatBoostClassifier(
-            iterations=150,
-            learning_rate=0.03,
-            depth=7,
-            random_seed=42,
-            loss_function="MultiClass",
-            eval_metric="MultiClass",
-            verbose=0,
-        )
-        cb_model.fit(
-            X_train,
-            y_train,
-            eval_set=(X_val, y_val),
-            use_best_model=True,
-        )
-        cb_pred = cb_model.predict(X_test).ravel()
-        cb_pred = np.array(cb_pred, dtype=int)
-        cb_acc = accuracy_score(y_test, cb_pred)
-        print(f"🎯 CatBoost 正解率: {cb_acc:.2%}")
-    else:
-        cb_model = None
-        cb_acc = float("nan")
+        try:
+            cb_model = cb.CatBoostClassifier(
+                iterations=800,
+                learning_rate=0.02,
+                depth=8,
+                l2_leaf_reg=3.0,
+                bagging_temperature=0.5,
+                random_strength=1.0,
+                border_count=128,
+                random_seed=42,
+                loss_function="MultiClass",
+                eval_metric="MultiClass",
+                early_stopping_rounds=150,
+                verbose=100,
+                thread_count=-1,
+            )
+            cb_model.fit(
+                X_train, y_train,
+                eval_set=(X_val, y_val),
+                use_best_model=True,
+            )
+            cb_pred = cb_model.predict(X_test).ravel()
+            cb_pred = np.array(cb_pred, dtype=int)
+            cb_acc = accuracy_score(y_test, cb_pred)
+            print(f"🎯 CatBoost 正解率: {cb_acc:.2%}  (best iter={cb_model.get_best_iteration()})")
+        except Exception as exc:
+            print(f"⚠️ CatBoost 学習失敗: {exc}")
+            print("   → LGB + XGB の2モデルでアンサンブルします")
+            cb_model = None
+            cb_acc = float("nan")
 
     # ④ 検証データで重み最適化
     print("\n⚖️ アンサンブル重み最適化中...")

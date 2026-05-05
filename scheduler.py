@@ -341,12 +341,12 @@ def run_roi_tracking():
 schedule.every().day.at("07:00").do(run_roi_tracking)
 
 print("=" * 50)
-print("🙏 うまなり地蔵AI スケジューラー起動")
-print("📅 毎朝08:00 → JRA開催日のみ予想実行")
-print("📧 毎朝08:30 → 月〜金は曜日別情報メール")
+print("[SCHEDULER] Umanari Jizo AI Scheduler Started")
+print("[SCHEDULE] 08:00 - Run prediction (JRA race day only)")
+print("[SCHEDULE] 08:30 - Mail daily info (Mon-Fri)")
 print("=" * 50)
 _ps = _load_paper_state()
-print(f"  本日({now_jst().strftime('%m/%d')} JST)の開催: {'あり' if is_jra_race_day() else 'なし'}")
+print(f"  Today ({now_jst().strftime('%m/%d')} JST) JRA race: {'YES' if is_jra_race_day() else 'NO'}")
 print(f"  ペーパートレード: {'稼働中' if _ps.get('active') else '終了'} ({_ps.get('race_days',0)}開催日 / {PAPER_TRADE_DAYS}日間)")
 print("  オッズスナップショット: 毎時 :02 (JRA開催日 07:00-17:00)")
 

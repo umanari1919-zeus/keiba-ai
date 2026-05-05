@@ -1,0 +1,14 @@
+2026-05-04 14:24:05,572 [INFO] EV データ読み込み: D:\keiba_ai\ev_analysis_2026.csv (688 行)
+2026-05-04 14:24:05,582 [INFO] レース数: 88 / 指標行数: 440
+2026-05-04 14:24:05,582 [INFO]   [upset] race_id=20260228060201 score=0.703 avg_gap=13.0 odds_std=16.0
+2026-05-04 14:24:05,582 [INFO]   [upset] race_id=20260117080106 score=0.694 avg_gap=11.4 odds_std=18.4
+2026-05-04 14:24:05,582 [INFO]   [upset] race_id=20260222050108 score=0.689 avg_gap=13.8 odds_std=13.3
+2026-05-04 14:24:05,793 [INFO] race_metrics UPSERT: 440 行
+2026-05-04 14:24:05,794 [INFO] 完了: {'races_computed': 88, 'metrics_written': 440, 'top_upsets': [{'race_id': '20260228060201', 'avg_gap': 12.9875, 'odds_std': 16.0305, 'top3_prob': 0.7674, 'shock_score': 4.9979, 'upset_score': 0.703}, {'race_id': '20260117080106', 'avg_gap': 11.4229, 'odds_std': 18.3506, 'top3_prob': 0.709, 'shock_score': 6.2926, 'upset_score': 0.6941}, {'race_id': '20260222050108', 'avg_gap': 13.79, 'odds_std': 13.3111, 'top3_prob': 0.7597, 'shock_score': 6.3059, 'upset_score': 0.6888}]}
+2026-05-04 14:56:47,787 [INFO] EV データ読み込み: D:\keiba_ai\ev_analysis_2026.csv (688 行)
+2026-05-04 14:56:47,799 [INFO] レース数: 88 / 指標行数: 440
+2026-05-04 14:56:47,799 [INFO]   [upset] race_id=20260228060201 score=0.703 avg_gap=13.0 odds_std=16.0
+2026-05-04 14:56:47,799 [INFO]   [upset] race_id=20260117080106 score=0.694 avg_gap=11.4 odds_std=18.4
+2026-05-04 14:56:47,799 [INFO]   [upset] race_id=20260222050108 score=0.689 avg_gap=13.8 odds_std=13.3
+2026-05-04 14:56:47,922 [INFO] race_metrics UPSERT: 440 行
+2026-05-04 14:56:47,923 [INFO] 完了: {'races_computed': 88, 'metrics_written': 440, 'top_upsets': [{'race_id': '20260228060201', 'avg_gap': 12.9875, 'odds_std': 16.0305, 'top3_prob': 0.7674, 'shock_score': 4.9979, 'upset_score': 0.703}, {'race_id': '20260117080106', 'avg_gap': 11.4229, 'odds_std': 18.3506, 'top3_prob': 0.709, 'shock_score': 6.2926, 'upset_score': 0.6941}, {'race_id': '20260222050108', 'avg_gap': 13.79, 'odds_std': 13.3111, 'top3_prob': 0.7597, 'shock_score': 6.3059, 'upset_score': 0.6888}]}

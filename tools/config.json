@@ -1,0 +1,82 @@
+{
+  "tools": {
+    "opencode": {
+      "version": "1.14.35",
+      "enabled": true,
+      "purpose": "パイプラインコード生成・改善",
+      "api_key_env": "OPENCODE_API_KEY",
+      "model": "gpt4",
+      "config_dir": ".opencode",
+      "commands": {
+        "generate": "opencode generate --type",
+        "analyze": "opencode analyze --dir",
+        "optimize": "opencode optimize --input",
+        "apply_suggestions": "opencode apply-suggestions"
+      }
+    },
+    "claude": {
+      "version": "2.1.126",
+      "enabled": true,
+      "purpose": "エージェント開発・テスト・デバッグ",
+      "api_key_env": "CLAUDE_API_KEY",
+      "model": "claude-opus-4.6",
+      "config_dir": ".claude",
+      "commands": {
+        "dev": "claude dev",
+        "test": "claude test",
+        "init": "claude init",
+        "run": "claude run"
+      }
+    },
+    "openclaw": {
+      "version": "2026.4.26",
+      "enabled": true,
+      "purpose": "ドキュメント自動生成",
+      "api_key_env": null,
+      "config_dir": null,
+      "language": "japanese",
+      "commands": {
+        "generate": "openclaw generate --input",
+        "update": "openclaw update --file",
+        "batch": "openclaw batch --dir"
+      }
+    },
+    "codex": {
+      "version": "0.125.0",
+      "enabled": true,
+      "purpose": "コード補完・スニペット生成",
+      "api_key_env": "CODEX_API_KEY",
+      "model": "gpt-3.5-turbo",
+      "commands": {
+        "search": "codex search",
+        "complete": "codex complete --context",
+        "explain": "codex explain"
+      }
+    }
+  },
+  "integration": {
+    "keiba_ai_project": {
+      "root": "D:\\keiba_ai",
+      "pipeline_dir": "pipeline_v2",
+      "agents_dir": "agents",
+      "docs_dir": "docs"
+    },
+    "auto_generation": {
+      "enabled": true,
+      "on_commit": false,
+      "on_schedule": {
+        "enabled": false,
+        "cron": "0 2 * * *"
+      }
+    }
+  },
+  "environment": {
+    "NODE_ENV": "production",
+    "npm_bin": "C:\\Users\\uchih\\AppData\\Roaming\\npm"
+  },
+  "logging": {
+    "level": "info",
+    "dir": "tools\\logs",
+    "retention_days": 30
+  }
+}

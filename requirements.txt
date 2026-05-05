@@ -35,6 +35,9 @@ schedule>=1.2
 
 # ── ダッシュボード ────────────────────────────────────
 streamlit>=1.30
+fastapi>=0.104.0        # REST API フレームワーク
+uvicorn[standard]>=0.24.0  # ASGI サーバー
+pydantic>=2.3.0         # データ検証
 
 # ── LLM・AI API ──────────────────────────────────────
 anthropic>=0.25        # Claude Haiku コメント生成

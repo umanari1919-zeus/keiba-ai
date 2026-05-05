@@ -1,0 +1,46 @@
+{
+  "commands": [
+    {
+      "name": "keiba-morning",
+      "description": "今日の競馬予想パイプラインを実行する",
+      "command": "cd D:\\keiba_ai && python run_all.py --v2",
+      "shortcut": "km"
+    },
+    {
+      "name": "keiba-report",
+      "description": "今日の買い目シートを表示する",
+      "command": "cd D:\\keiba_ai && python pipeline/morning_report.py",
+      "shortcut": "kr"
+    },
+    {
+      "name": "keiba-comment",
+      "description": "うまなり地蔵コメントを生成する（対話モード）",
+      "command": "cd D:\\keiba_ai && python nvidia_comment.py",
+      "shortcut": "kc"
+    },
+    {
+      "name": "keiba-canary",
+      "description": "パイプラインの動作検証（ドライラン）",
+      "command": "cd D:\\keiba_ai && python canary_run.py",
+      "shortcut": "kv"
+    },
+    {
+      "name": "keiba-weekly",
+      "description": "週次モデル再学習パイプラインを実行する",
+      "command": "cd D:\\keiba_ai && python run_all.py --v2-weekly",
+      "shortcut": "kw"
+    },
+    {
+      "name": "keiba-dashboard",
+      "description": "Streamlitダッシュボードを起動する",
+      "command": "cd D:\\keiba_ai && streamlit run pipeline/dashboard_15.py",
+      "shortcut": "kd"
+    },
+    {
+      "name": "keiba-smoke",
+      "description": "スモークテスト（21項目チェック）を実行する",
+      "command": "cd D:\\keiba_ai && python smoke_test.py",
+      "shortcut": "ks"
+    }
+  ]
+}

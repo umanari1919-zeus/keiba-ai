@@ -50,7 +50,7 @@ def fetch_data():
                 r.kyori, r.track_code, r.tenko_code,
                 r.shiba_babajotai_code, r.dirt_babajotai_code,
                 r.shusso_tosu, r.kaisai_kai, r.kaisai_nichime,
-                COALESCE(r.grade,'') AS race_grade,
+                COALESCE(r.grade_code,'') AS race_grade,
                 m.ketto1_bamei AS chichi, m.ketto2_bamei AS haha,
                 m.ketto3_bamei AS chichi_chichi, m.ketto5_bamei AS haha_chichi,
                 m.shiba_ryo_1chaku, m.shiba_ryo_2chaku, m.shiba_ryo_3chaku,
@@ -117,14 +117,14 @@ def fetch_data():
                     u.kakutei_chakujun::int  AS chakujun,
                     u.tansho_odds::numeric   AS odds,
                     u.keibajo_code,
-                    r.kyori, r.grade,
+                    r.kyori, r.grade_code,
                     u.kaisai_nen||u.kaisai_gappi AS rdate,
                     LAG(u.kishu_code)   OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) AS prev_kishu,
                     LAG(u.kakutei_chakujun::int) OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) AS prev_chak,
                     LAG(u.tansho_odds::numeric)  OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) AS prev_od,
                     LAG(u.keibajo_code) OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) AS prev_kei,
                     LAG(r.kyori)        OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) AS prev_kyo,
-                    LAG(r.grade)        OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) AS prev_grd,
+                    LAG(r.grade_code)        OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) AS prev_grd,
                     LAG(u.kaisai_nen||u.kaisai_gappi) OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) AS prev_dt
                 FROM umagoto_race_joho u
                 JOIN race_shosai r ON u.race_code = r.race_code

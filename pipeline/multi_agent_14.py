@@ -147,7 +147,7 @@ def analyzer_agent(state: AgentState) -> AgentState:
         ensemble_proba = (
             0.5 * lgb_model.predict_proba(X) +
             0.3 * xgb_model.predict_proba(X) +
-            0.2 * cb_model.predict_proba(X)
+            0.2 * (cb_model.predict_proba(X) if cb_model is not None else 0)
         )
 
         # 1着確率を抽出

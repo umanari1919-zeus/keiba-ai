@@ -94,13 +94,13 @@ def optimize_xgb(X_train_enc, y_train_enc, X_val_enc, y_val_enc, n_trials=60) ->
             'gamma':         trial.suggest_float('gamma', 0, 5),
             'min_child_weight': trial.suggest_int('min_child_weight', 1, 20),
             'random_state': 42, 'n_jobs': -1, 'verbosity': 0,
-            'eval_metric': 'mlogloss'
+            'eval_metric': 'mlogloss',
+            'early_stopping_rounds': 30,
         }
         model = xgb.XGBClassifier(**params)
         model.fit(X_train_enc, y_train_enc,
                   eval_set=[(X_val_enc, y_val_enc)],
-                  verbose=False,
-                  early_stopping_rounds=30)
+                  verbose=False)
         return accuracy_score(y_val_enc, model.predict(X_val_enc))
 
     study = optuna.create_study(direction='maximize',
@@ -156,6 +156,9 @@ def run_optuna_advanced(n_trials_lgb=80, n_trials_xgb=60, n_trials_cb=50):
     df = df.fillna(0)
     feats = [f for f in features if f in df.columns]
 
+    # 着順を18位以下に絞る（大多数のレースは18頭立て、稀な20位等の unseen label 対策）
+    df = df[df['kakutei_chakujun'].between(1, 18)]
+
     X = df[feats]
     y = df['kakutei_chakujun']
     y_enc = le.fit_transform(y)
@@ -165,6 +168,12 @@ def run_optuna_advanced(n_trials_lgb=80, n_trials_xgb=60, n_trials_cb=50):
     y_tr, y_vl = y.iloc[:split], y.iloc[split:]
     y_tr_enc   = y_enc[:split]
     y_vl_enc   = y_enc[split:]
+
+    # train に存在しないラベルを val から除外（unseen label 対策）
+    train_labels = set(y_tr.unique())
+    val_mask = y_vl.isin(train_labels)
+    X_vl, y_vl = X_vl[val_mask], y_vl[val_mask]
+    y_vl_enc   = y_vl_enc[val_mask.values]
 
     # LightGBM 最適化
     print(f"\n  🔍 LightGBM Optuna ({n_trials_lgb}試行)...")

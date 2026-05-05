@@ -1,0 +1,20 @@
+C:\Users\uchih\AppData\Roaming\Python\Python314\site-packages\mlflow\tracking\_tracking_service\utils.py:184: FutureWarning: The filesystem tracking backend (e.g., './mlruns') is deprecated as of February 2026. Consider transitioning to a database backend (e.g., 'sqlite:///mlflow.db') to take advantage of the latest MLflow features. See https://mlflow.org/docs/latest/self-hosting/migrate-from-file-store for migration guidance.
+  return FileStore(store_uri, store_uri)
+C:\Users\uchih\AppData\Roaming\Python\Python314\site-packages\mlflow\tracking\_model_registry\utils.py:220: FutureWarning: The filesystem model registry backend (e.g., './mlruns') is deprecated as of February 2026. Consider transitioning to a database backend (e.g., 'sqlite:///mlflow.db') to take advantage of the latest MLflow features. See https://mlflow.org/docs/latest/self-hosting/migrate-from-file-store for migration guidance.
+  return FileStore(store_uri)
+Registered model 'keiba_model_registry' already exists. Creating a new version of this model...
+Traceback (most recent call last):
+  File "D:\keiba_ai\mlflow_register.py", line 8, in <module>
+    mlflow.register_model(artifact_path, "keiba_model_registry")
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\uchih\AppData\Roaming\Python\Python314\site-packages\mlflow\tracking\_model_registry\fluent.py", line 148, in register_model
+    return _register_model(
+        model_uri=model_uri,
+    ...<3 lines>...
+        env_pack=env_pack,
+    )
+  File "C:\Users\uchih\AppData\Roaming\Python\Python314\site-packages\mlflow\tracking\_model_registry\fluent.py", line 199, in _register_model
+    raise MlflowException(
+    ...<3 lines>...
+    )
+mlflow.exceptions.MlflowException: Unable to find a logged_model with artifact_path models/model_v8.pkl under run 497cb24706be4da4b1a456b691f6fcf2

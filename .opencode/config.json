@@ -1,0 +1,159 @@
+{
+  "$schema": "https://opencode.ai/config.schema.json",
+  "$comment": "うまなり地蔵AI — 競馬予想AIシステム用 OpenCode 設定",
+  "model": "anthropic/claude-haiku-4-5-20251001",
+  "preferredProvider": "anthropic",
+  "providers": {
+    "openai": {
+      "name": "NVIDIA NIM (OpenAI互換)",
+      "baseURL": "https://integrate.api.nvidia.com/v1",
+      "apiKey": "${NVIDIA_API_KEY}",
+      "models": [
+        {
+          "id": "meta/llama-3.1-70b-instruct",
+          "name": "Llama 3.1 70B (NVIDIA)",
+          "contextLength": 128000,
+          "costPer1kTokens": 0.30
+        },
+        {
+          "id": "nvidia/llama-3.1-nemotron-70b-instruct",
+          "name": "Nemotron 70B (NVIDIA)",
+          "contextLength": 128000,
+          "costPer1kTokens": 0.30
+        }
+      ]
+    },
+    "anthropic": {
+      "name": "Anthropic Claude",
+      "apiKey": "${ANTHROPIC_API_KEY}",
+      "models": [
+        {
+          "id": "claude-opus-4-6",
+          "name": "Claude Opus 4.6 (最高精度)",
+          "contextLength": 200000,
+          "costPer1kTokens": 15.0
+        },
+        {
+          "id": "claude-sonnet-4-6",
+          "name": "Claude Sonnet 4.6 (バランス)",
+          "contextLength": 200000,
+          "costPer1kTokens": 3.0
+        },
+        {
+          "id": "claude-haiku-4-5-20251001",
+          "name": "Claude Haiku 4.5 (最安・高速)",
+          "contextLength": 200000,
+          "costPer1kTokens": 0.80
+        }
+      ]
+    }
+  },
+  "project": {
+    "name": "うまなり地蔵AI",
+    "description": "LightGBM/XGBoost/CatBoost アンサンブル競馬予想 + 自動売買システム",
+    "version": "2.1-v2",
+    "root": "D:\\keiba_ai",
+    "language": "python",
+    "pythonVersion": "3.10+",
+    "type": "ml_pipeline_system"
+  },
+  "codeGeneration": {
+    "style": {
+      "formatter": "black",
+      "lineLength": 100,
+      "linter": "pylint",
+      "docstringFormat": "google",
+      "typeHints": true,
+      "language": "ja"
+    },
+    "templates": {
+      "paths": [
+        ".opencode/templates",
+        "templates"
+      ]
+    }
+  },
+  "keybinds": {
+    "leader": "ctrl+k",
+    "generate": "ctrl+shift+g",
+    "optimize": "ctrl+shift+o",
+    "analyze": "ctrl+shift+a",
+    "test": "ctrl+shift+t"
+  },
+  "theme": "catppuccin",
+  "ui": {
+    "language": "ja",
+    "timezone": "Asia/Tokyo",
+    "dateFormat": "YYYY-MM-DD",
+    "timeFormat": "HH:mm:ss"
+  },
+  "integration": {
+    "git": {
+      "enabled": true,
+      "autoCommit": false,
+      "messagePrefix": "opencode: "
+    },
+    "python": {
+      "enabled": true,
+      "formatOnSave": true,
+      "lintOnSave": true,
+      "testOnSave": false
+    },
+    "vscode": {
+      "enabled": true,
+      "extensionId": "opencode.vscode-integration"
+    }
+  },
+  "codingStandards": {
+    "agents": {
+      "pattern": "agent_pattern_v2",
+      "baseClass": "BaseAgent",
+      "baseClassPath": "agents/base_agent.py",
+      "requiredMethods": ["execute", "validate_input", "log_result"],
+      "namingConvention": "*_agent.py"
+    },
+    "features": {
+      "featureCount": 97,
+      "excludedColumns": ["odds_popular", "win_odds", "place_odds"],
+      "expansionWindow": "shift+cumsum"
+    },
+    "models": {
+      "ensemble": {
+        "type": "weighted",
+        "lgb_weight": 0.5,
+        "xgb_weight": 0.3,
+        "cb_weight": 0.2
+      }
+    }
+  },
+  "dataGeneration": {
+    "outputPaths": {
+      "generatedCode": "generated/",
+      "logs": ".opencode/logs/",
+      "cache": ".opencode/cache/",
+      "templates": ".opencode/templates/"
+    }
+  },
+  "advanced": {
+    "contextWindow": 100000,
+    "temperature": 0.5,
+    "topP": 0.95,
+    "frequencyPenalty": 0.1,
+    "presencePenalty": 0.0,
+    "maxTokens": 8000,
+    "streaming": true,
+    "retryPolicy": {
+      "maxRetries": 3,
+      "initialDelay": 1,
+      "maxDelay": 10
+    }
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "outputs": [
+      ".opencode/logs/opencode.log",
+      "stdout"
+    ]
+  }
+}
