@@ -479,6 +479,16 @@ def train_model():
         }, f)
 
     print("\n💾 model_v8.pkl に保存しました（最適重み込み）")
+
+    try:
+        import sys
+        sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent.parent))
+        from mlflow_register import register_model
+        meta = register_model(r"D:\keiba_ai\model_v8.pkl")
+        print(f"📊 MLflow 登録完了: run_id={meta['run_id']}")
+    except Exception as e:
+        print(f"⚠️ MLflow 登録スキップ: {e}")
+
     return lgb_model, xgb_model, cb_model, features
 
 if __name__ == "__main__":
