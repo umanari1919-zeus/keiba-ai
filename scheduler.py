@@ -10,10 +10,22 @@ import pathlib
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
-log = logging.getLogger(__name__)
-
-# agents パッケージのパスを通す（このファイルが置かれているディレクトリを基準にする）
+# ── ログ設定 ────────────────────────────────────────────────────────────
 _HERE = pathlib.Path(__file__).resolve().parent
+_LOG_DIR = _HERE / "logs"
+_LOG_DIR.mkdir(exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler(_LOG_DIR / "scheduler.log", encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+)
+log = logging.getLogger("scheduler")
+
+# ── sys.path 設定 ────────────────────────────────────────────────────────
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 # pipeline モジュールが D:\keiba_ai 直下にある場合のフォールバック
@@ -50,7 +62,7 @@ def is_jra_race_day(date: datetime = None) -> bool:
         conn.close()
         return result
     except Exception as e:
-        print(f"  ⚠️ 開催日チェック失敗（DB接続エラー）: {e}")
+        log.warning("開催日チェック失敗（DB接続エラー）: %s", e)
         # DB接続失敗時は土日なら実行
         return date.weekday() in (5, 6)
 
@@ -79,7 +91,7 @@ def _run_with_retry(cmd: list, *, timeout: int = 600, label: str = "") -> subpro
             last_exc = e
 
         if attempt < MAX_RETRIES:
-            print(f"  [{label}] リトライ {attempt}/{MAX_RETRIES} ({RETRY_WAIT}秒後)")
+            log.warning("[%s] リトライ %d/%d (%d秒後)", label, attempt, MAX_RETRIES, RETRY_WAIT)
             time.sleep(RETRY_WAIT)
 
     _notify_failure(label, last_exc)
@@ -97,27 +109,27 @@ def _notify_failure(label: str, exc: Exception) -> None:
             body=f"時刻: {now}\nジョブ: {label}\nリトライ{MAX_RETRIES}回失敗\n\nエラー:\n{exc}",
         )
     except Exception as notify_err:
-        print(f"  [{label}] 通知送信失敗: {notify_err}")
+        log.error("[%s] 通知送信失敗: %s", label, notify_err)
 
 
 def run_pipeline():
     """開催日のみ: mykeibadb同期 → 予想パイプライン → 推奨ベットメール"""
     now = now_jst()
-    print(f"\n⏰ [{now}] 定時チェック開始")
+    log.info("定時チェック開始")
 
     if not is_jra_race_day(now):
-        print(f"  📭 本日（{now.strftime('%m/%d')}）はJRA開催なし → スキップ")
+        log.info("本日（%s）はJRA開催なし → スキップ", now.strftime("%m/%d"))
         return
 
-    print(f"  🏇 本日（{now.strftime('%m/%d')}）はJRA開催日 → パイプライン実行")
+    log.info("本日（%s）はJRA開催日 → パイプライン実行", now.strftime("%m/%d"))
     try:
         _run_with_retry(
             [PYTHON, "-X", "utf8", r"D:\keiba_ai\run_all.py", "--skip-train"],
             timeout=1800, label="run_pipeline",
         )
-        print(f"✅ [{datetime.now()}] 実行完了")
+        log.info("パイプライン実行完了")
     except Exception as e:
-        print(f"❌ [{datetime.now()}] パイプライン失敗: {e}")
+        log.error("パイプライン失敗: %s", e)
 
 
 PAPER_TRADE_STATE = pathlib.Path(r"D:\keiba_ai\data\paper_trade_state.json")
@@ -150,7 +162,7 @@ def run_paper_trading():
 
     state = _load_paper_state()
     if not state.get("active", True):
-        print(f"  [paper-trade] 30日間ペーパートレード期間終了済み (開始: {state.get('start_date')})")
+        log.info("[paper-trade] 30日間ペーパートレード期間終了済み (開始: %s)", state.get("start_date"))
         return
 
     start = date.fromisoformat(state["start_date"])
@@ -158,11 +170,11 @@ def run_paper_trading():
     if elapsed_days >= PAPER_TRADE_DAYS:
         state["active"] = False
         _save_paper_state(state)
-        print(f"  [paper-trade] {PAPER_TRADE_DAYS}日間終了! 最終結果 -> {PAPER_TRADE_STATE}")
-        _print_paper_summary(state)
+        log.info("[paper-trade] %d日間終了! 最終結果 -> %s", PAPER_TRADE_DAYS, PAPER_TRADE_STATE)
+        _log_paper_summary(state)
         return
 
-    print(f"\n  [paper-trade] ペーパートレード実行 ({elapsed_days+1}/{PAPER_TRADE_DAYS}日目)")
+    log.info("[paper-trade] ペーパートレード実行 (%d/%d日目)", elapsed_days + 1, PAPER_TRADE_DAYS)
 
     try:
         from agents.base_agent import AgentMeta
@@ -209,22 +221,25 @@ def run_paper_trading():
         state["total_bets"] = state.get("total_bets", 0) + n_bets
         _save_paper_state(state)
 
-        print(f"  [paper-trade] 本日: {n_bets}件 | 累計: {state['total_bets']}件 | 残り{PAPER_TRADE_DAYS - elapsed_days - 1}日")
+        log.info(
+            "[paper-trade] 本日: %d件 | 累計: %d件 | 残り%d日",
+            n_bets, state["total_bets"], PAPER_TRADE_DAYS - elapsed_days - 1,
+        )
 
     except Exception as e:
-        print(f"  [paper-trade] エラー: {e}")
+        log.error("[paper-trade] エラー: %s", e)
 
 
-def _print_paper_summary(state: dict) -> None:
-    print("=" * 50)
-    print("ペーパートレード 30日間 最終レポート")
-    print(f"  開始日:     {state.get('start_date')}")
-    print(f"  開催日数:   {state.get('race_days')}日")
-    print(f"  累計ベット: {state.get('total_bets')}件")
+def _log_paper_summary(state: dict) -> None:
+    log.info("=" * 50)
+    log.info("ペーパートレード 30日間 最終レポート")
+    log.info("  開始日:     %s", state.get("start_date"))
+    log.info("  開催日数:   %s日", state.get("race_days"))
+    log.info("  累計ベット: %s件", state.get("total_bets"))
     trade_log = pathlib.Path(r"D:\keiba_ai\data")
     logs = sorted(trade_log.glob("trade_log_*.json"))
-    print(f"  ログファイル: {len(logs)}件 -> {trade_log}")
-    print("=" * 50)
+    log.info("  ログファイル: %d件 -> %s", len(logs), trade_log)
+    log.info("=" * 50)
 
 
 def run_weekday_mail():
@@ -235,7 +250,7 @@ def run_weekday_mail():
         return  # 土日は run_pipeline 側で対応
     labels = {0:"月曜:成績振り返り", 1:"火曜:特別登録馬",
               2:"水曜:注目調教馬",   3:"木曜:週末プレビュー", 4:"金曜:オッズ動向"}
-    print(f"\n📧 [{now}] {labels.get(dow,'')} メール送信")
+    log.info("📧 %s メール送信", labels.get(dow, ""))
     subprocess.run([PYTHON, "-X", "utf8", "-c",
         "import sys; sys.path.insert(0,r'D:\\keiba_ai'); "
         "from pipeline.notify_08 import send_daily_report; send_daily_report()"])
@@ -257,14 +272,14 @@ def run_odds_snapshot():
         return
     if not (7 <= now.hour <= 17):
         return
-    print(f"\n  [odds-snapshot] {now.strftime('%H:%M')} オッズ取得")
+    log.info("[odds-snapshot] %s オッズ取得", now.strftime("%H:%M"))
     try:
         _run_with_retry(
             [PYTHON, "-X", "utf8", r"D:\keiba_ai\pipeline\odds_scraper_36.py"],
             timeout=120, label="odds_snapshot",
         )
     except Exception as e:
-        print(f"  [odds-snapshot] 最終失敗: {e}")
+        log.error("[odds-snapshot] 最終失敗: %s", e)
 
 schedule.every().hour.at(":02").do(run_odds_snapshot)
 
@@ -273,19 +288,19 @@ schedule.every().hour.at(":02").do(run_odds_snapshot)
 def run_rag_index_rebuild():
     """keiba_data_features.csv の更新を RAGStore に反映する週次バッチ。"""
     now = now_jst()
-    print(f"\n  [rag-index] {now.strftime('%Y-%m-%d %H:%M')} RAG インデックス再構築開始")
+    log.info("[rag-index] %s RAG インデックス再構築開始", now.strftime("%Y-%m-%d %H:%M"))
     rag_script = pathlib.Path(r"D:\keiba_ai\pipeline_v2\10_rag_index.py")
     if not rag_script.exists():
-        print("  [rag-index] 10_rag_index.py が見つかりません。スキップ。")
+        log.warning("[rag-index] 10_rag_index.py が見つかりません。スキップ。")
         return
     try:
         _run_with_retry(
             [PYTHON, "-X", "utf8", str(rag_script), "--limit", "50000"],
             timeout=600, label="rag_index",
         )
-        print(f"  [rag-index] 完了")
+        log.info("[rag-index] 完了")
     except Exception as exc:
-        print(f"  [rag-index] 最終失敗: {exc}")
+        log.error("[rag-index] 最終失敗: %s", exc)
 
 
 schedule.every().monday.at("03:00").do(run_rag_index_rebuild)
@@ -295,7 +310,7 @@ schedule.every().monday.at("03:00").do(run_rag_index_rebuild)
 def run_upsetscore_weekly():
     """ev_analysis CSV の更新を race_metrics テーブルに反映する週次バッチ。"""
     now = now_jst()
-    print(f"\n  [upset-score] {now.strftime('%Y-%m-%d %H:%M')} UpsetScore 再算出")
+    log.info("[upset-score] %s UpsetScore 再算出", now.strftime("%Y-%m-%d %H:%M"))
     us_script = pathlib.Path(r"D:\keiba_ai\pipeline_v2\08_upsetscore.py")
     run_tag   = f"weekly_{now.strftime('%Y%m%d')}"
     try:
@@ -303,9 +318,9 @@ def run_upsetscore_weekly():
             [PYTHON, "-X", "utf8", str(us_script), "--run_tag", run_tag],
             timeout=300, label="upsetscore",
         )
-        print(f"  [upset-score] 完了")
+        log.info("[upset-score] 完了")
     except Exception as exc:
-        print(f"  [upset-score] 最終失敗: {exc}")
+        log.error("[upset-score] 最終失敗: %s", exc)
 
 
 schedule.every().monday.at("03:30").do(run_upsetscore_weekly)
@@ -315,7 +330,7 @@ schedule.every().monday.at("03:30").do(run_upsetscore_weekly)
 def run_model_training():
     """model_train_03.py を実行し、model_registry にバージョン登録する。"""
     now = now_jst()
-    print(f"\n  [train] {now.strftime('%Y-%m-%d %H:%M')} モデル再学習開始")
+    log.info("[train] %s モデル再学習開始", now.strftime("%Y-%m-%d %H:%M"))
     try:
         from agents.train_agent import TrainAgent
         from agents.base_agent import AgentMeta
@@ -328,11 +343,11 @@ def run_model_training():
             mid     = result.output.get("model_id", "")
             metrics = result.output.get("metrics", {})
             acc     = metrics.get("ensemble_acc", "N/A")
-            print(f"  [train] 完了: model_id={mid} ensemble_acc={acc}")
+            log.info("[train] 完了: model_id=%s ensemble_acc=%s", mid, acc)
         else:
-            print(f"  [train] 失敗: {result.error}")
+            log.error("[train] 失敗: %s", result.error)
     except Exception as exc:
-        print(f"  [train] 例外: {exc}")
+        log.exception("[train] 例外: %s", exc)
 
 
 schedule.every().sunday.at("02:00").do(run_model_training)
@@ -342,7 +357,7 @@ schedule.every().sunday.at("02:00").do(run_model_training)
 def run_knowledge_update():
     """knowledge_curator_41.py を KnowledgeAgent 経由で実行し、知識ベースを更新する。"""
     now = now_jst()
-    print(f"\n  [knowledge] {now.strftime('%Y-%m-%d %H:%M')} 知識ベース更新開始")
+    log.info("[knowledge] %s 知識ベース更新開始", now.strftime("%Y-%m-%d %H:%M"))
     try:
         from agents.knowledge_agent import KnowledgeAgent
         from agents.base_agent import AgentMeta
@@ -353,15 +368,16 @@ def run_knowledge_update():
 
         if result.ok:
             out = result.output
-            print(
-                f"  [knowledge] 完了: active={out.get('active_count',0)} "
-                f"ev_boost={out.get('ev_boost_entries',0)} "
-                f"version={out.get('version','')}"
+            log.info(
+                "[knowledge] 完了: active=%s ev_boost=%s version=%s",
+                out.get("active_count", 0),
+                out.get("ev_boost_entries", 0),
+                out.get("version", ""),
             )
         else:
-            print(f"  [knowledge] 失敗: {result.error}")
+            log.error("[knowledge] 失敗: %s", result.error)
     except Exception as exc:
-        print(f"  [knowledge] 例外: {exc}")
+        log.exception("[knowledge] 例外: %s", exc)
 
 
 schedule.every().monday.at("04:00").do(run_knowledge_update)
@@ -371,7 +387,7 @@ schedule.every().monday.at("04:00").do(run_knowledge_update)
 def run_roi_tracking():
     """roi_tracker.csv の日次損益を集計して MonitorAgent へのメトリクスを保存する。"""
     now = now_jst()
-    print(f"\n  [roi-track] {now.strftime('%Y-%m-%d %H:%M')} 回収率精算開始")
+    log.info("[roi-track] %s 回収率精算開始", now.strftime("%Y-%m-%d %H:%M"))
     try:
         from agents.roi_tracker_agent import RoiTrackerAgent
         from agents.base_agent import AgentMeta
@@ -381,31 +397,41 @@ def run_roi_tracking():
 
         if result.ok:
             out = result.output
-            print(
-                f"  [roi-track] 完了: "
-                f"daily={out.get('daily_roi', 0)*100:.1f}% "
-                f"weekly={out.get('weekly_roi', 0)*100:.1f}% "
-                f"losses={out.get('consecutive_losses', 0)}"
+            log.info(
+                "[roi-track] 完了: daily=%.1f%% weekly=%.1f%% losses=%d",
+                out.get("daily_roi", 0) * 100,
+                out.get("weekly_roi", 0) * 100,
+                out.get("consecutive_losses", 0),
             )
             for a in out.get("alerts", []):
-                print(f"  [roi-track] ALERT: {a.get('message', '')}")
+                log.warning("[roi-track] ALERT: %s", a.get("message", ""))
         else:
-            print(f"  [roi-track] 失敗: {result.error}")
+            log.error("[roi-track] 失敗: %s", result.error)
     except Exception as exc:
-        print(f"  [roi-track] 例外: {exc}")
+        log.exception("[roi-track] 例外: %s", exc)
 
 
 schedule.every().day.at("07:00").do(run_roi_tracking)
 
-print("=" * 50)
-print("[SCHEDULER] Umanari Jizo AI Scheduler Started")
-print("[SCHEDULE] 08:00 - Run prediction (JRA race day only)")
-print("[SCHEDULE] 08:30 - Mail daily info (Mon-Fri)")
-print("=" * 50)
+# ── 起動バナー ──────────────────────────────────────────────────────────
+log.info("=" * 50)
+log.info("[SCHEDULER] Umanari Jizo AI Scheduler Started")
+log.info("[SCHEDULE] 08:00 - Run prediction (JRA race day only)")
+log.info("[SCHEDULE] 08:30 - Mail daily info (Mon-Fri)")
+log.info("=" * 50)
 _ps = _load_paper_state()
-print(f"  Today ({now_jst().strftime('%m/%d')} JST) JRA race: {'YES' if is_jra_race_day() else 'NO'}")
-print(f"  ペーパートレード: {'稼働中' if _ps.get('active') else '終了'} ({_ps.get('race_days',0)}開催日 / {PAPER_TRADE_DAYS}日間)")
-print("  オッズスナップショット: 毎時 :02 (JRA開催日 07:00-17:00)")
+log.info(
+    "Today (%s JST) JRA race: %s",
+    now_jst().strftime("%m/%d"),
+    "YES" if is_jra_race_day() else "NO",
+)
+log.info(
+    "ペーパートレード: %s (%d開催日 / %d日間)",
+    "稼働中" if _ps.get("active") else "終了",
+    _ps.get("race_days", 0),
+    PAPER_TRADE_DAYS,
+)
+log.info("オッズスナップショット: 毎時 :02 (JRA開催日 07:00-17:00)")
 
 while True:
     schedule.run_pending()
