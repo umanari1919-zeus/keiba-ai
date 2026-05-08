@@ -458,7 +458,7 @@ def train_model():
     print(f"Ensemble : {ensemble_acc:.2%} (logloss={ensemble_logloss:.5f})")
     print(f"{'='*40}")
 
-    with open("D:\\keiba_ai\\model_v8.pkl", "wb") as f:
+    with open(MODEL_PATH, "wb") as f:
         pickle.dump({
             'lgb_model': lgb_model,
             'xgb_model': xgb_model,

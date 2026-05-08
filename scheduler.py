@@ -1,3 +1,4 @@
+import logging
 import os
 import schedule
 import time
@@ -9,11 +10,16 @@ import pathlib
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
-# agents パッケージのパスを通す
-_WORKTREE = pathlib.Path(r"D:\keiba_ai\.claude\worktrees\brave-kilby-e79e98")
-if str(_WORKTREE) not in sys.path:
-    sys.path.insert(0, str(_WORKTREE))
-sys.path.insert(0, r"D:\keiba_ai")
+log = logging.getLogger(__name__)
+
+# agents パッケージのパスを通す（このファイルが置かれているディレクトリを基準にする）
+_HERE = pathlib.Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+# pipeline モジュールが D:\keiba_ai 直下にある場合のフォールバック
+_MAIN = pathlib.Path(r"D:\keiba_ai")
+if _MAIN.exists() and str(_MAIN) not in sys.path:
+    sys.path.insert(0, str(_MAIN))
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -21,8 +27,12 @@ JST = ZoneInfo("Asia/Tokyo")
 def now_jst() -> datetime:
     return datetime.now(tz=JST)
 
-DB_CONFIG = dict(host="127.0.0.1", port=5433, dbname="mykeibadb",
-                 user="postgres", password=os.environ.get("KEIBA_DB_PASSWORD", ""))
+try:
+    from pipeline.config import DB_CONFIG
+except Exception:
+    # config が読めない場合のフォールバック（環境変数でパスワードを取得）
+    DB_CONFIG = dict(host="127.0.0.1", port=5433, dbname="mykeibadb",
+                     user="postgres", password=os.environ.get("KEIBA_DB_PASSWORD", ""))
 
 def is_jra_race_day(date: datetime = None) -> bool:
     """kaisaibiテーブルで今日がJRA開催日か確認"""
@@ -118,8 +128,8 @@ def _load_paper_state() -> dict:
     if PAPER_TRADE_STATE.exists():
         try:
             return json.loads(PAPER_TRADE_STATE.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("[paper-trade] ステート読み込みエラー: %s", exc)
     state = {"start_date": date.today().isoformat(), "race_days": 0, "total_bets": 0, "active": True}
     PAPER_TRADE_STATE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     return state
