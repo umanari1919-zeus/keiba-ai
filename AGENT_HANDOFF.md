@@ -48,6 +48,36 @@
 
 <!-- 新しいエントリーをここに追加 -->
 
+## 2026-05-09 [Claude Code]
+
+### Now working
+- PR #1 マージコンフリクト解消 → タスク 1.11（scheduler.py logging）完了
+
+### Files touched
+- 修正: `pipeline/model_train_03.py`（コンフリクト解消: ハードコードパス + MLflow ブロック採用）
+- 修正: `scheduler.py`（コンフリクト解消 + タスク 1.11: 全 print → logging 統一）
+- 修正: `tests/conftest.py`（コンフリクト解消: ベースブランチの完全版 fixture を採用）
+
+### Do not touch
+- `pipeline/*.py`（model_train_03.py, dashboard_15.py を除く）— Codex 専有
+- `api/routers/admin.py`, `api/main.py` — Codex 専有
+- `tests/test_agents_*.py`, `tests/test_pipeline_*.py`, `tests/test_api_*.py` — Codex 専有
+
+### Tests run
+- `python -m py_compile scheduler.py` → OK ✅
+- `grep -c "print(" scheduler.py` → 0件 ✅（タスク 1.11 完了条件）
+
+### Blocked / needs human decision
+- タスク 2.16（dashboard サイレント失敗 UX 改善）は Codex のタスク 1.8 完了待ち
+  - 1.8 完了後に `AGENT_HANDOFF.md` に記載してほしい
+
+### Next
+- Claude Code の次タスク: タスク 2.16（dashboard silent failure UX）
+  - Codex が 1.8（bare except → `except Exception as e:` 置換）を完了してから着手
+- Codex の次タスク: タスク 2.8（GitHub Actions CI）→ 最優先
+
+---
+
 ## 2026-05-08 [Claude Code]
 
 ### Now working
