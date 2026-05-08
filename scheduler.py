@@ -1,3 +1,4 @@
+import os
 import schedule
 import time
 import subprocess
@@ -21,7 +22,7 @@ def now_jst() -> datetime:
     return datetime.now(tz=JST)
 
 DB_CONFIG = dict(host="127.0.0.1", port=5433, dbname="mykeibadb",
-                 user="postgres", password="zeus")
+                 user="postgres", password=os.environ.get("KEIBA_DB_PASSWORD", ""))
 
 def is_jra_race_day(date: datetime = None) -> bool:
     """kaisaibiテーブルで今日がJRA開催日か確認"""
@@ -45,6 +46,50 @@ def is_jra_race_day(date: datetime = None) -> bool:
 
 PYTHON = r"C:\Users\uchih\AppData\Local\Programs\Python\Python313\python.exe"
 
+MAX_RETRIES = 2
+RETRY_WAIT  = 30  # 秒
+
+
+def _run_with_retry(cmd: list, *, timeout: int = 600, label: str = "") -> subprocess.CompletedProcess:
+    """subprocess実行をリトライ付きで行う。全リトライ失敗時はメール通知。"""
+    last_exc = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=timeout,
+            )
+            if result.returncode == 0:
+                return result
+            last_exc = RuntimeError(
+                f"returncode={result.returncode}\n{result.stderr[-500:]}"
+            )
+        except subprocess.TimeoutExpired as e:
+            last_exc = e
+        except Exception as e:
+            last_exc = e
+
+        if attempt < MAX_RETRIES:
+            print(f"  [{label}] リトライ {attempt}/{MAX_RETRIES} ({RETRY_WAIT}秒後)")
+            time.sleep(RETRY_WAIT)
+
+    _notify_failure(label, last_exc)
+    raise last_exc
+
+
+def _notify_failure(label: str, exc: Exception) -> None:
+    """ジョブ失敗時にメール通知を試みる。通知自体が失敗してもクラッシュしない。"""
+    try:
+        sys.path.insert(0, r"D:\keiba_ai")
+        from pipeline.notify_08 import send_notify
+        now = now_jst().strftime("%Y-%m-%d %H:%M")
+        send_notify(
+            subject=f"[うまなり地蔵AI] ジョブ失敗: {label}",
+            body=f"時刻: {now}\nジョブ: {label}\nリトライ{MAX_RETRIES}回失敗\n\nエラー:\n{exc}",
+        )
+    except Exception as notify_err:
+        print(f"  [{label}] 通知送信失敗: {notify_err}")
+
+
 def run_pipeline():
     """開催日のみ: mykeibadb同期 → 予想パイプライン → 推奨ベットメール"""
     now = now_jst()
@@ -55,8 +100,14 @@ def run_pipeline():
         return
 
     print(f"  🏇 本日（{now.strftime('%m/%d')}）はJRA開催日 → パイプライン実行")
-    subprocess.run([PYTHON, "-X", "utf8", r"D:\keiba_ai\run_all.py", "--skip-train"])
-    print(f"✅ [{datetime.now()}] 実行完了")
+    try:
+        _run_with_retry(
+            [PYTHON, "-X", "utf8", r"D:\keiba_ai\run_all.py", "--skip-train"],
+            timeout=1800, label="run_pipeline",
+        )
+        print(f"✅ [{datetime.now()}] 実行完了")
+    except Exception as e:
+        print(f"❌ [{datetime.now()}] パイプライン失敗: {e}")
 
 
 PAPER_TRADE_STATE = pathlib.Path(r"D:\keiba_ai\data\paper_trade_state.json")
@@ -197,11 +248,13 @@ def run_odds_snapshot():
     if not (7 <= now.hour <= 17):
         return
     print(f"\n  [odds-snapshot] {now.strftime('%H:%M')} オッズ取得")
-    subprocess.run(
-        [PYTHON, "-X", "utf8",
-         r"D:\keiba_ai\pipeline\odds_scraper_36.py"],
-        capture_output=True, timeout=120,
-    )
+    try:
+        _run_with_retry(
+            [PYTHON, "-X", "utf8", r"D:\keiba_ai\pipeline\odds_scraper_36.py"],
+            timeout=120, label="odds_snapshot",
+        )
+    except Exception as e:
+        print(f"  [odds-snapshot] 最終失敗: {e}")
 
 schedule.every().hour.at(":02").do(run_odds_snapshot)
 
@@ -211,21 +264,18 @@ def run_rag_index_rebuild():
     """keiba_data_features.csv の更新を RAGStore に反映する週次バッチ。"""
     now = now_jst()
     print(f"\n  [rag-index] {now.strftime('%Y-%m-%d %H:%M')} RAG インデックス再構築開始")
+    rag_script = pathlib.Path(r"D:\keiba_ai\pipeline_v2\10_rag_index.py")
+    if not rag_script.exists():
+        print("  [rag-index] 10_rag_index.py が見つかりません。スキップ。")
+        return
     try:
-        rag_script = pathlib.Path(r"D:\keiba_ai\pipeline_v2\10_rag_index.py")
-        if not rag_script.exists():
-            print("  [rag-index] 10_rag_index.py が見つかりません。スキップ。")
-            return
-        result = subprocess.run(
+        _run_with_retry(
             [PYTHON, "-X", "utf8", str(rag_script), "--limit", "50000"],
-            capture_output=True, text=True, timeout=600,
+            timeout=600, label="rag_index",
         )
-        if result.returncode == 0:
-            print(f"  [rag-index] 完了")
-        else:
-            print(f"  [rag-index] エラー: {result.stderr[-300:]}")
+        print(f"  [rag-index] 完了")
     except Exception as exc:
-        print(f"  [rag-index] 例外: {exc}")
+        print(f"  [rag-index] 最終失敗: {exc}")
 
 
 schedule.every().monday.at("03:00").do(run_rag_index_rebuild)
@@ -236,19 +286,16 @@ def run_upsetscore_weekly():
     """ev_analysis CSV の更新を race_metrics テーブルに反映する週次バッチ。"""
     now = now_jst()
     print(f"\n  [upset-score] {now.strftime('%Y-%m-%d %H:%M')} UpsetScore 再算出")
+    us_script = pathlib.Path(r"D:\keiba_ai\pipeline_v2\08_upsetscore.py")
+    run_tag   = f"weekly_{now.strftime('%Y%m%d')}"
     try:
-        us_script = pathlib.Path(r"D:\keiba_ai\pipeline_v2\08_upsetscore.py")
-        run_tag   = f"weekly_{now.strftime('%Y%m%d')}"
-        result    = subprocess.run(
+        _run_with_retry(
             [PYTHON, "-X", "utf8", str(us_script), "--run_tag", run_tag],
-            capture_output=True, text=True, timeout=300,
+            timeout=300, label="upsetscore",
         )
-        if result.returncode == 0:
-            print(f"  [upset-score] 完了")
-        else:
-            print(f"  [upset-score] エラー: {result.stderr[-300:]}")
+        print(f"  [upset-score] 完了")
     except Exception as exc:
-        print(f"  [upset-score] 例外: {exc}")
+        print(f"  [upset-score] 最終失敗: {exc}")
 
 
 schedule.every().monday.at("03:30").do(run_upsetscore_weekly)
