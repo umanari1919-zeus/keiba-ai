@@ -209,12 +209,38 @@ def run_stage(script_name: str, task_id: str) -> bool:
 def check_auto_stop(conditions: dict) -> tuple[bool, str]:
     """
     auto_stop条件をチェック。
-    実際の数値はDBやログから取得する（現在はプレースホルダー）。
+    agents.MonitorAgent を使った実メトリクス評価 → フォールバックで alerts/ 参照。
     戻り値: (停止すべきか, 理由)
     """
-    # TODO: DBから実際のメトリクスを取得して判定する
-    # 例: mismatch_rate = db_query("SELECT mismatch_rate FROM monitoring...")
-    # 現在は常に通過（False）
+    try:
+        from agents.monitor_agent import MonitorAgent
+        from agents.base_agent import AgentMeta
+
+        meta   = AgentMeta(trace_id=TRACE_ID, run_tag=RUN_TAG)
+        agent  = MonitorAgent(dry_run=False)
+        result = agent.execute(meta, {})
+
+        if result.ok and result.output.get("auto_stop"):
+            alerts = result.output.get("alerts", [])
+            reason = "; ".join(a["message"] for a in alerts if a.get("severity") == "critical")
+            return True, reason
+
+        return False, ""
+
+    except Exception as exc:
+        log.debug("MonitorAgent fallback: %s", exc)
+
+    alert_dir = BASE / "alerts"
+    if alert_dir.exists():
+        reports = sorted(alert_dir.glob("monitor_*.json"), reverse=True)
+        if reports:
+            try:
+                data = json.loads(reports[0].read_text(encoding="utf-8"))
+                if data.get("auto_stop"):
+                    return True, "最新モニターレポートで auto_stop=True"
+            except Exception:
+                pass
+
     return False, ""
 
 

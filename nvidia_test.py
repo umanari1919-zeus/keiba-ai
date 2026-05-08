@@ -1,8 +1,13 @@
+import os
 from openai import OpenAI
+
+api_key = os.getenv("NVIDIA_API_KEY")
+if not api_key:
+    raise SystemExit("NVIDIA_API_KEY が環境変数に設定されていません。.env を確認してください。")
 
 client = OpenAI(
     base_url="https://integrate.api.nvidia.com/v1",
-    api_key="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"
+    api_key=api_key,
 )
 
 response = client.chat.completions.create(
