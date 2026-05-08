@@ -6,6 +6,14 @@ from .base_agent import BaseAgent, AgentMeta, AgentResult
 from .schema_registry import SchemaRegistry, SCHEMAS
 from .audit_logger import AuditLogger
 from .rag_store import RAGStore, get_default_store
+from .ingest_agent import IngestAgent
+from .normalizer_agent import NormalizerAgent
+from .feature_agent import FeatureAgent
+from .batch_inference_agent import BatchInferenceAgent
+from .publish_agent import PublishAgent
+from .trading_agent import TradingAgent
+from .llm_explain_agent import LLMExplainAgent
+from .monitor_agent import MonitorAgent
 from .market_agent import MarketAgent
 from .train_agent import TrainAgent
 from .ops_agent import OpsAgent
@@ -30,6 +38,14 @@ __all__ = [
     "SchemaRegistry", "SCHEMAS",
     "AuditLogger",
     "RAGStore", "get_default_store",
+    "IngestAgent",
+    "NormalizerAgent",
+    "FeatureAgent",
+    "BatchInferenceAgent",
+    "PublishAgent",
+    "TradingAgent",
+    "LLMExplainAgent",
+    "MonitorAgent",
     "MarketAgent",
     "TrainAgent",
     "OpsAgent",

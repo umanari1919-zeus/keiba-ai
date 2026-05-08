@@ -129,19 +129,20 @@ test("build_training_features (woodchip列名修正確認)", _wood_query)
 print("\n=== モデルファイル ===")
 
 def _model_exists():
-    import glob
-    pkls = glob.glob("D:\\keiba_ai\\model_v*.pkl")
+    import glob, pickle
+    from pipeline.config import MODEL_PATH, BASE_DIR
+    pkls = glob.glob(BASE_DIR + "/model_v*.pkl")
     assert pkls, "model_v*.pkl が見つからない"
     latest = sorted(pkls)[-1]
-    import pickle
     with open(latest, "rb") as f:
         model = pickle.load(f)
     assert model is not None
 test("最新モデル (.pkl) ロード", _model_exists)
 
 def _nn_exists():
+    from pipeline.config import MODEL_NN_PATH
     import os
-    assert os.path.exists("D:\\keiba_ai\\model_nn.pth"), "model_nn.pth なし"
+    assert os.path.exists(MODEL_NN_PATH), f"model_nn.pth なし ({MODEL_NN_PATH})"
 test("NN モデル (.pth) 存在確認", _nn_exists)
 
 # ── CSV ファイル ──────────────────────────────────────────────────

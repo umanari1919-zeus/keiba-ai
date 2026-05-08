@@ -43,6 +43,10 @@ EV_THRESHOLDS_BY_TYPE = {
 EV_THRESHOLD_BACKTEST = 0.05
 MIN_ODDS_BACKTEST     = 5.0
 
+# ── モデルファイル ─────────────────────────────────────
+MODEL_PATH    = os.path.join(BASE_DIR, "model_v8.pkl")
+MODEL_NN_PATH = os.path.join(BASE_DIR, "model_nn.pth")
+
 # ── CSV ファイル ────────────────────────────────────────
 CSV_RAW       = os.path.join(BASE_DIR, "keiba_data.csv")
 CSV_FEATURES  = os.path.join(BASE_DIR, "keiba_data_features.csv")

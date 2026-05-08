@@ -1,5 +1,13 @@
 import pickle
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime
+
+try:
+    from pipeline.config import MODEL_PATH
+except Exception:
+    MODEL_PATH = "D:\\keiba_ai\\model_v8.pkl"
 
 try:
     import catboost as cb
@@ -458,7 +466,7 @@ def train_model():
     print(f"Ensemble : {ensemble_acc:.2%} (logloss={ensemble_logloss:.5f})")
     print(f"{'='*40}")
 
-    with open("D:\\keiba_ai\\model_v8.pkl", "wb") as f:
+    with open(MODEL_PATH, "wb") as f:
         pickle.dump({
             'lgb_model': lgb_model,
             'xgb_model': xgb_model,
@@ -478,7 +486,7 @@ def train_model():
             }
         }, f)
 
-    print("\n💾 model_v8.pkl に保存しました（最適重み込み）")
+    print(f"\n💾 {MODEL_PATH} に保存しました（最適重み込み）")
     return lgb_model, xgb_model, cb_model, features
 
 if __name__ == "__main__":
