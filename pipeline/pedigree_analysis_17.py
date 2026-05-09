@@ -14,8 +14,9 @@ from datetime import datetime
 from collections import Counter, defaultdict
 from sqlalchemy import create_engine, text
 
-DB_URL   = "postgresql://postgres:trust@localhost:5433/mykeibadb"
-OUT_DIR  = "D:\\keiba_ai\\pedigree_output"
+from pipeline.config import DB_URL, PEDIGREE_OUTPUT_DIR
+
+OUT_DIR  = os.fspath(PEDIGREE_OUTPUT_DIR)
 
 # 血統位置の定義（ketto番号 → 系譜ラベル）
 KETTO_LABELS = {

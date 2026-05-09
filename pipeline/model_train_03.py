@@ -1,6 +1,11 @@
 import pickle
 from datetime import datetime
 
+from pipeline.config import BASE_DIR, CSV_FEATURES
+from pipeline.native_runtime import ensure_native_runtime
+
+ensure_native_runtime()
+
 try:
     import catboost as cb
 except ImportError:
@@ -20,9 +25,9 @@ FEATURES = [
     'kyori', 'track_code', 'tenko_code',
     'shiba_babajotai_code', 'dirt_babajotai_code', 'shusso_tosu',
     'wakuban', 'umaban', 'kaisai_kai', 'kaisai_nichime',
-    'past3_avg_chakujun', 'past3_avg_odds',
+    'past3_avg_chakujun',
     'total_races', 'win_count', 'win_rate',
-    'prev_chakujun', 'prev_odds',
+    'prev_chakujun',
     'weeks_since_last_race', 'futan_henka',
     'kishu_win_rate', 'chokyoshi_win_rate', 'kishu_keibajo_win_rate',
     'chichi_code', 'haha_code', 'chichi_chichi_code',
@@ -40,7 +45,7 @@ FEATURES = [
     # 高度特徴量 (feature_advanced_19)
     'post_win_rate', 'post_bias', 'inner_advantage',
     'tenko_apt', 'shiba_baba_apt', 'dirt_baba_apt',
-    'ema3_chakujun', 'ema5_chakujun', 'ema10_chakujun', 'ema3_odds',
+    'ema3_chakujun', 'ema5_chakujun', 'ema10_chakujun',
     'weight_ema3', 'weight_up_trend', 'weight_down_trend',
     'weight_big_change', 'weight_stability',
     'futan_diff', 'age_futan_interaction', 'futan_increase',
@@ -79,6 +84,9 @@ LEAKY_OR_RAW_COLUMNS = {
     "win_probability",
     "expected_value",
     "odds_decimal",
+    "past3_avg_odds",
+    "prev_odds",
+    "ema3_odds",
     "pred_chakujun",
     "hit",
     "ev",
@@ -103,7 +111,10 @@ def _detect_features(df: pd.DataFrame) -> list[str]:
     base = [f for f in FEATURES if f in df.columns]
     extra = []
     for c in df.columns:
+        normalized = c.lower()
         if c in base or c in LEAKY_OR_RAW_COLUMNS:
+            continue
+        if "odds" in normalized or "ninki" in normalized or "popular" in normalized:
             continue
         if df[c].dtype == "object":
             continue
@@ -221,7 +232,29 @@ def _safe_random_split(X, y_encoded):
     return X_train, X_val, X_test, np.asarray(y_train), np.asarray(y_val), np.asarray(y_test)
 
 
+def _normalize_proba(proba, n_classes: int) -> np.ndarray:
+    p = np.asarray(proba, dtype=float)
+    if p.ndim == 1:
+        p = p.reshape(-1, 1)
+    if p.shape[1] < n_classes:
+        p = np.pad(p, ((0, 0), (0, n_classes - p.shape[1])), constant_values=0.0)
+    elif p.shape[1] > n_classes:
+        p = p[:, :n_classes]
+    p = np.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0)
+    p = np.clip(p, 0.0, None)
+    row_sum = p.sum(axis=1, keepdims=True)
+    bad_rows = row_sum[:, 0] <= 0
+    if np.any(bad_rows):
+        p[bad_rows, :] = 1.0 / n_classes
+        row_sum = p.sum(axis=1, keepdims=True)
+    return p / row_sum
+
+
 def _optimize_ensemble_weights(lgb_p, xgb_p, cb_p, y_true):
+    n_classes = max(np.asarray(lgb_p).shape[1], np.asarray(xgb_p).shape[1], np.asarray(cb_p).shape[1] if cb_p is not None else 0)
+    lgb_p = _normalize_proba(lgb_p, n_classes)
+    xgb_p = _normalize_proba(xgb_p, n_classes)
+    cb_p = _normalize_proba(cb_p, n_classes) if cb_p is not None else None
     candidates = np.arange(0.05, 0.96, 0.05)
     best = None
     best_score = float("inf")
@@ -231,7 +264,7 @@ def _optimize_ensemble_weights(lgb_p, xgb_p, cb_p, y_true):
             w2 = 1.0 - w1
             if w2 < 0.05:
                 continue
-            p = w1 * lgb_p + w2 * xgb_p
+            p = _normalize_proba(w1 * lgb_p + w2 * xgb_p, n_classes)
             score = log_loss(y_true, p, labels=list(range(p.shape[1])))
             acc = accuracy_score(y_true, p.argmax(axis=1))
             if score < best_score or (np.isclose(score, best_score) and acc > best_acc):
@@ -245,7 +278,7 @@ def _optimize_ensemble_weights(lgb_p, xgb_p, cb_p, y_true):
             w3 = 1.0 - w1 - w2
             if w3 < 0.05:
                 continue
-            p = w1 * lgb_p + w2 * xgb_p + w3 * cb_p
+            p = _normalize_proba(w1 * lgb_p + w2 * xgb_p + w3 * cb_p, n_classes)
             score = log_loss(y_true, p, labels=list(range(p.shape[1])))
             acc = accuracy_score(y_true, p.argmax(axis=1))
             if score < best_score or (np.isclose(score, best_score) and acc > best_acc):
@@ -259,7 +292,7 @@ def train_model():
     print(f"🤖 [{datetime.now()}] 世界最強版 学習開始...")
     print("⚠️ オッズ・人気は除外、時系列で学習/検証/評価")
 
-    df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df = pd.read_csv(CSV_FEATURES,
                      encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     df = df.fillna(0)
 
@@ -411,13 +444,14 @@ def train_model():
 
     # ④ 検証データで重み最適化
     print("\n⚖️ アンサンブル重み最適化中...")
-    lgb_val_p = lgb_model.predict_proba(X_val)
-    xgb_val_p = xgb_model.predict_proba(X_val)
-    cb_val_p = cb_model.predict_proba(X_val) if cb_available else None
+    n_classes = len(le.classes_)
+    lgb_val_p = _normalize_proba(lgb_model.predict_proba(X_val), n_classes)
+    xgb_val_p = _normalize_proba(xgb_model.predict_proba(X_val), n_classes)
+    cb_val_p = _normalize_proba(cb_model.predict_proba(X_val), n_classes) if cb_model is not None else None
     weights, val_logloss, val_acc = _optimize_ensemble_weights(
         lgb_val_p, xgb_val_p, cb_val_p, y_val
     )
-    if cb_available:
+    if cb_model is not None:
         print(
             f"   最適重み: LGB={weights[0]:.2f} XGB={weights[1]:.2f} CB={weights[2]:.2f} "
             f"(valid acc={val_acc:.2%}, logloss={val_logloss:.5f})"
@@ -430,19 +464,21 @@ def train_model():
 
     # ⑤ テストデータ評価
     print("\n🔀 テスト評価...")
-    lgb_test_p = lgb_model.predict_proba(X_test)
-    xgb_test_p = xgb_model.predict_proba(X_test)
-    if cb_available:
-        cb_test_p = cb_model.predict_proba(X_test)
-        ensemble_proba = (
+    lgb_test_p = _normalize_proba(lgb_model.predict_proba(X_test), n_classes)
+    xgb_test_p = _normalize_proba(xgb_model.predict_proba(X_test), n_classes)
+    if cb_model is not None:
+        cb_test_p = _normalize_proba(cb_model.predict_proba(X_test), n_classes)
+        ensemble_proba = _normalize_proba(
             weights[0] * lgb_test_p
             + weights[1] * xgb_test_p
-            + weights[2] * cb_test_p
+            + weights[2] * cb_test_p,
+            n_classes,
         )
     else:
-        ensemble_proba = (
+        ensemble_proba = _normalize_proba(
             weights[0] * lgb_test_p
-            + weights[1] * xgb_test_p
+            + weights[1] * xgb_test_p,
+            n_classes,
         )
     ensemble_pred = ensemble_proba.argmax(axis=1)
     ensemble_acc = accuracy_score(y_test, ensemble_pred)
@@ -453,12 +489,13 @@ def train_model():
     print(f"{'='*40}")
     print(f"LightGBM : {lgb_acc:.2%}")
     print(f"XGBoost  : {xgb_acc:.2%}")
-    if cb_available:
+    if cb_model is not None:
         print(f"CatBoost : {cb_acc:.2%}")
     print(f"Ensemble : {ensemble_acc:.2%} (logloss={ensemble_logloss:.5f})")
     print(f"{'='*40}")
 
-    with open("D:\\keiba_ai\\model_v8.pkl", "wb") as f:
+    model_path = f"{BASE_DIR}/model_v8.pkl"
+    with open(model_path, "wb") as f:
         pickle.dump({
             'lgb_model': lgb_model,
             'xgb_model': xgb_model,
@@ -469,7 +506,7 @@ def train_model():
             'metrics': {
                 'lgb_acc': float(lgb_acc),
                 'xgb_acc': float(xgb_acc),
-                'cb_acc': float(cb_acc) if cb_available else None,
+                'cb_acc': float(cb_acc) if cb_model is not None else None,
                 'ensemble_acc': float(ensemble_acc),
                 'ensemble_logloss': float(ensemble_logloss),
                 'val_acc': float(val_acc),
@@ -478,13 +515,13 @@ def train_model():
             }
         }, f)
 
-    print("\n💾 model_v8.pkl に保存しました（最適重み込み）")
+    print(f"\n💾 {model_path} に保存しました（最適重み込み）")
 
     try:
-        import sys
-        sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent.parent))
+        import sys as _sys
+        _sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent.parent))
         from mlflow_register import register_model
-        meta = register_model(r"D:\keiba_ai\model_v8.pkl")
+        meta = register_model(str(model_path))
         print(f"📊 MLflow 登録完了: run_id={meta['run_id']}")
     except Exception as e:
         print(f"⚠️ MLflow 登録スキップ: {e}")

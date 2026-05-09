@@ -2,13 +2,14 @@
 うまなり地蔵AI ダッシュボード v3
 起動: streamlit run pipeline/dashboard_15.py
 """
-import os, json, glob, subprocess
+import os, sys, json, glob, subprocess
 from datetime import datetime
 from collections import Counter
 
 import pandas as pd
 import numpy as np
 import streamlit as st
+from pipeline.config import BASE_DIR as BASE
 
 st.set_page_config(
     page_title="🙏 うまなり地蔵AI",
@@ -24,9 +25,8 @@ try:
 except ImportError:
     PLOTLY = False
 
-BASE = "D:\\keiba_ai"
 YEAR = datetime.now().year
-PYTHON = r"C:\Users\uchih\AppData\Local\Programs\Python\Python313\python.exe"
+PYTHON = os.getenv("KEIBA_PYTHON", sys.executable)
 
 # ── レースコード変換 ──────────────────────────────────────────
 _JYO = {
@@ -576,7 +576,7 @@ if page == "今日の予想":
                 with st.spinner("投稿中..."):
                     res = subprocess.run(
                         [PYTHON, "-X", "utf8", "-c",
-                         "import sys; sys.path.insert(0,r'D:\\keiba_ai'); "
+                         f"import sys; sys.path.insert(0,{BASE!r}); "
                          "from pipeline.social_bot_27 import broadcast_picks; broadcast_picks()"],
                         capture_output=True, text=True, cwd=BASE,
                         env={**os.environ,'PYTHONUTF8':'1'}, timeout=60

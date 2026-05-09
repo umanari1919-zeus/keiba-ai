@@ -2,8 +2,8 @@
 auto_learn_agent.py — 自動再学習トリガーエージェント
 ====================================================
 pipeline/auto_learn_13.py をラップし、直近の回収率トレンドから
-再学習の要否を判定する。should_retrain() が True の場合、
-TrainAgent を起動してモデルを更新する。
+再学習の要否を判定する。実更新は live=True または
+KEIBA_AUTO_RETRAIN_LIVE=1 の場合だけ TrainAgent を起動する。
 
 manifest: auto-learn-agent v1.0.0
   purpose : 精度劣化時の自動再学習トリガ
@@ -16,23 +16,20 @@ from __future__ import annotations
 import importlib.util
 import logging
 import os
-import pathlib
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
+from .path_config import BASE_DIR
 
 log = logging.getLogger(__name__)
-
-BASE_DIR = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-
 
 class AutoLearnAgent(BaseAgent):
     """
     パフォーマンス履歴を評価し、回収率が閾値を下回った場合に
     TrainAgent を呼び出してモデルを再学習する。
 
-    dry_run=True の場合は should_retrain() の判定のみ行い、
-    実際の再学習はスキップする。
+    既定では should_retrain() の判定のみ行い、実際の再学習は
+    live=True または KEIBA_AUTO_RETRAIN_LIVE=1 の場合だけ実行する。
     """
 
     def __init__(self, dry_run: bool = False) -> None:
@@ -44,6 +41,9 @@ class AutoLearnAgent(BaseAgent):
 
     def _run(self, meta: AgentMeta, payload: dict) -> dict[str, Any]:
         force = payload.get("force", False)
+        live = payload.get("live", False) or os.getenv("KEIBA_AUTO_RETRAIN_LIVE", "").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
 
         mod = self._load_module()
         if mod is None:
@@ -67,11 +67,12 @@ class AutoLearnAgent(BaseAgent):
             }
 
         # ─── 再学習実行（dry_run=True ならスキップ） ─────────────
-        if self.dry_run:
-            log.info("[DRY-RUN] 再学習をスキップ: %s", reason)
+        if self.dry_run or not live:
+            prefix = "[dry-run]" if self.dry_run else "[live-required]"
+            log.info("%s 再学習をスキップ: %s", prefix, reason)
             return {
                 "retrain_triggered": False,
-                "reason":            f"[dry-run] {reason}",
+                "reason":            f"{prefix} {reason}",
                 "model_id":          None,
             }
 

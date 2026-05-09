@@ -12,9 +12,11 @@ import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
 
-load_dotenv("D:\\keiba_ai\\.env")
+from pipeline.config import BASE_DIR, DATA_DIR
 
-CACHE_FILE = "D:\\keiba_ai\\data\\comment_cache.json"
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+CACHE_FILE = os.path.join(DATA_DIR, "comment_cache.json")
 MODEL      = "claude-haiku-4-5-20251001"   # 最安モデル
 MAX_TOKENS = 150                            # 必要最小限
 
@@ -284,7 +286,7 @@ def generate_todays_post() -> str:
     print(f"📝 [{datetime.now()}] 本日の予想コメント生成中...")
 
     try:
-        df = pd.read_csv("D:\\keiba_ai\\simulation_2025.csv",
+        df = pd.read_csv(os.path.join(BASE_DIR, "simulation_2025.csv"),
                          encoding="utf-8-sig", on_bad_lines="skip")
     except FileNotFoundError:
         print("❌ simulation_2025.csv が見つかりません")
@@ -319,7 +321,7 @@ def generate_todays_post() -> str:
     print(post_text)
     print("="*40)
 
-    with open("D:\\keiba_ai\\today_post.txt", "w", encoding="utf-8") as f:
+    with open(os.path.join(BASE_DIR, "today_post.txt"), "w", encoding="utf-8") as f:
         f.write(post_text)
     print("💾 today_post.txt に保存しました")
 

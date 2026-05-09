@@ -10,10 +10,13 @@ import pickle, json, os, itertools
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 from pipeline.ensemble_utils import load_ensemble_weights
+from pipeline.config import BASE_DIR, CSV_FEATURES, DATA_DIR
+from pipeline.native_runtime import ensure_native_runtime
 
-BASE_DIR   = "D:\\keiba_ai"
-MODEL_FILE = f"{BASE_DIR}\\model_v8.pkl"
-FEAT_FILE  = f"{BASE_DIR}\\keiba_data_features.csv"
+ensure_native_runtime()
+
+MODEL_FILE = os.path.join(BASE_DIR, "model_v8.pkl")
+FEAT_FILE  = CSV_FEATURES
 
 
 # ─────────────────────────────────────────────────────────────
@@ -315,13 +318,13 @@ def run_backtest_engine(year: int = None) -> dict:
     print(f"    最終資金: {opt_res['final']:,.0f}円 ({opt_res['growth_rate']:+.1f}%)")
 
     # 保存
-    os.makedirs(f"{BASE_DIR}\\data", exist_ok=True)
+    os.makedirs(DATA_DIR, exist_ok=True)
 
-    cond_path = f"{BASE_DIR}\\data\\backtest_conditions_{year}.csv"
+    cond_path = os.path.join(DATA_DIR, f"backtest_conditions_{year}.csv")
     if not cond_df.empty:
         cond_df.to_csv(cond_path, index=False, encoding='utf-8-sig')
 
-    grid_path = f"{BASE_DIR}\\data\\backtest_grid_{year}.csv"
+    grid_path = os.path.join(DATA_DIR, f"backtest_grid_{year}.csv")
     grid.to_csv(grid_path, index=False, encoding='utf-8-sig')
 
     summary = {
@@ -331,7 +334,8 @@ def run_backtest_engine(year: int = None) -> dict:
         'optimized':     {k: v for k, v in opt_res.items() if k not in ('bets', 'equity_sample')},
         'equity_sample': opt_res['equity_sample'],
     }
-    with open(f"{BASE_DIR}\\data\\backtest_summary_{year}.json", 'w', encoding='utf-8') as f:
+    summary_path = os.path.join(DATA_DIR, f"backtest_summary_{year}.json")
+    with open(summary_path, 'w', encoding='utf-8') as f:
         json.dump(summary, f, ensure_ascii=False, indent=2, default=str)
 
     print(f"\n  💾 保存: data/backtest_summary_{year}.json, backtest_grid_{year}.csv")

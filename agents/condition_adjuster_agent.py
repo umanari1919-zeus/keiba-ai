@@ -16,16 +16,13 @@ from __future__ import annotations
 import importlib.util
 import logging
 import os
-import pathlib
 from datetime import datetime
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
+from .path_config import BASE_DIR
 
 log = logging.getLogger(__name__)
-
-BASE_DIR = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-
 
 class ConditionAdjusterAgent(BaseAgent):
     """

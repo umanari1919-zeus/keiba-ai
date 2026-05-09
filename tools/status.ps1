@@ -7,15 +7,19 @@ Write-Host "══════════════════════�
 Write-Host ""
 
 # PATH 確認
-$npmPath = "C:\Users\uchih\AppData\Roaming\npm"
-$pathExists = $env:Path -split ";" | Where-Object { $_ -eq $npmPath }
+$npmPath = if ($env:APPDATA) { Join-Path $env:APPDATA "npm" } else { "" }
+$pathExists = $npmPath -and (($env:Path -split ";") -contains $npmPath)
 
 if ($pathExists) {
     Write-Host "✅ PATH: npm bin ディレクトリが設定済み" -ForegroundColor Green
 } else {
     Write-Host "❌ PATH: npm bin ディレクトリが見つかりません" -ForegroundColor Red
     Write-Host "   以下を実行して PATH に追加してください:" -ForegroundColor Yellow
-    Write-Host "   `$env:Path += `";$npmPath`"" -ForegroundColor Gray
+    if ($npmPath) {
+        Write-Host "   `$env:Path += `";$npmPath`"" -ForegroundColor Gray
+    } else {
+        Write-Host "   APPDATA が未設定です。npm のグローバル bin パスを確認してください。" -ForegroundColor Gray
+    }
 }
 
 Write-Host ""

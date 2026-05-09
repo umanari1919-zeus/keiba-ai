@@ -18,17 +18,16 @@ import importlib.util
 import json
 import logging
 import os
-import pathlib
 import sys
 from datetime import datetime, timezone
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
+from .path_config import BASE_DIR, DATA_DIR
 
 log = logging.getLogger(__name__)
 
-BASE_DIR   = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-ALERT_FILE = BASE_DIR / "data" / "anomaly_alerts.json"
+ALERT_FILE = DATA_DIR / "anomaly_alerts.json"
 
 # CRITICAL アラートが CRITICAL_STOP_THRESHOLD 件以上で auto_stop を発動
 CRITICAL_STOP_THRESHOLD = 3

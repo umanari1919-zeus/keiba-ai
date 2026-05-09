@@ -12,22 +12,16 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
-import pathlib
 from datetime import datetime, timezone
 from typing import Any
 
+from .path_config import DATA_DIR
+from pipeline.config import DB_URL
+
 log = logging.getLogger(__name__)
 
-BASE_DIR   = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-AUDIT_DIR  = BASE_DIR / "data" / "audit_logs"
+AUDIT_DIR  = DATA_DIR / "audit_logs"
 AUDIT_DIR.mkdir(parents=True, exist_ok=True)
-
-DB_URL = os.getenv(
-    "KEIBA_DB_URL",
-    "postgresql://postgres:trust@localhost:5433/mykeibadb"
-)
-
 
 def sha256_of(obj: Any) -> str:
     raw = json.dumps(obj, ensure_ascii=False, sort_keys=True, default=str)

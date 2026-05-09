@@ -22,6 +22,7 @@ def main() -> None:
     parser.add_argument("--year",           type=int, default=0)
     parser.add_argument("--n_clusters",     type=int, default=5)
     parser.add_argument("--mc_simulations", type=int, default=1000)
+    parser.add_argument("--dry-run",        action="store_true")
     args = parser.parse_args()
 
     meta = AgentMeta(
@@ -32,10 +33,13 @@ def main() -> None:
     if args.year:
         payload["year"] = args.year
 
-    result = StatisticsAgent(dry_run=False).execute(meta, payload)
+    result = StatisticsAgent(dry_run=args.dry_run).execute(meta, payload)
     if not result.ok:
         log.error("StatisticsAgent 失敗: %s", result.error)
         sys.exit(1)
+    if args.dry_run:
+        log.info("統計分析 dry-run 完了")
+        return
 
     out = result.output
     log.info(

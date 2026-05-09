@@ -20,19 +20,15 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import pathlib
 import shutil
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
+from .path_config import BASE_DIR, DATA_DIR
+from pipeline.config import DB_URL
 
 log = logging.getLogger(__name__)
-
-BASE_DIR = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-DATA_DIR = BASE_DIR / "data"
-DB_URL   = os.getenv("KEIBA_DB_URL", "postgresql://postgres:trust@localhost:5433/mykeibadb")
 
 # ヘルスチェック閾値
 DISK_MIN_GB        = 2.0    # 最低空き容量

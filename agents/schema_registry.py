@@ -273,8 +273,7 @@ class SchemaRegistry:
             log.warning("psycopg2 未インストール。DB登録をスキップします。")
             return
 
-        import os
-        db_url = os.getenv("KEIBA_DB_URL", "postgresql://postgres:trust@localhost:5433/mykeibadb")
+        from pipeline.config import DB_URL
         sql = """
             INSERT INTO schema_registry (schema_name, schema_def, registered_at)
             VALUES (%(name)s, %(def)s, now())
@@ -283,7 +282,7 @@ class SchemaRegistry:
                   registered_at = now()
         """
         try:
-            conn = psycopg2.connect(db_url)
+            conn = psycopg2.connect(DB_URL)
             with conn, conn.cursor() as cur:
                 for name, definition in SCHEMAS.items():
                     cur.execute(sql, {"name": name, "def": json.dumps(definition)})

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Keiba Backtest Review"
+  short_description: "Review ROI, drawdown, EV thresholds, and betting strategy robustness."

@@ -11,10 +11,17 @@
 """
 import pandas as pd
 import numpy as np
+import pathlib
+import sys
 from sqlalchemy import create_engine, text
 from datetime import datetime
 
-DB_URL = "postgresql://postgres:trust@localhost:5433/mykeibadb"
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from pipeline.config import CSV_FEATURES, DB_URL
 
 KEIBAJO_MAP = {
     '01': 'sapporo', '02': 'hakodate', '03': 'fukushima', '04': 'niigata',
@@ -205,11 +212,6 @@ def add_ema_features(df: pd.DataFrame) -> pd.DataFrame:
             .transform(lambda x: x.shift(1).ewm(span=span, adjust=False).mean())
             .fillna(0)
         )
-        df[f'ema{span}_odds'] = (
-            df.groupby('ketto_toroku_bango')['tansho_odds']
-            .transform(lambda x: x.shift(1).ewm(span=span, adjust=False).mean())
-            .fillna(0)
-        )
     return df
 
 
@@ -279,7 +281,7 @@ def run_advanced_feature_engineering():
     print("🔬 高度特徴量エンジニアリング")
     print("="*55)
 
-    df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df = pd.read_csv(CSV_FEATURES,
                      encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     df = df.fillna(0)
     n_before = len(df.columns)
@@ -310,7 +312,7 @@ def run_advanced_feature_engineering():
     df = add_kaikai_week_bias(df)
 
     df = df.fillna(0)
-    df.to_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df.to_csv(CSV_FEATURES,
               index=False, encoding="utf-8-sig")
 
     n_after = len(df.columns)
@@ -325,7 +327,6 @@ ADVANCED_FEATURES = [
     'inner_advantage',                   # 内枠有利度
     'tenko_apt', 'shiba_baba_apt', 'dirt_baba_apt',  # 天候・馬場適性
     'ema3_chakujun', 'ema5_chakujun', 'ema10_chakujun',  # EMA着順
-    'ema3_odds',                         # EMAオッズ
     'weight_ema3', 'weight_up_trend', 'weight_down_trend',
     'weight_big_change', 'weight_stability',  # 体重トレンド
     'futan_diff', 'age_futan_interaction', 'futan_increase',  # 斤量補正

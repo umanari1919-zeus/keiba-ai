@@ -1,5 +1,7 @@
 import psycopg2
-conn=psycopg2.connect(host="localhost",port=5433,dbname="mykeibadb",user="postgres",password="")
+from pipeline.config import DB_CONFIG
+
+conn=psycopg2.connect(**DB_CONFIG)
 cur=conn.cursor()
 
 tables=["yasuji_predictions","yasuji_horse_features","umagoto_race_joho","race_shosai","odds1_tansho"]

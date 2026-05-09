@@ -1,14 +1,44 @@
-import pandas as pd
-import numpy as np
+from __future__ import annotations
+
+import argparse
+import os
+import pathlib
+import sys
 from datetime import datetime
 
-from pipeline.db_sync_42 import add_ingest_meta, write_snapshot
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+from pipeline.config import CSV_FEATURES, CSV_RAW, DATA_DIR, LEAKY_DERIVED_FEATURE_COLUMNS
+
+
+def check_runtime() -> list[str]:
+    issues = []
+    if pd is None:
+        issues.append("pandas が未インストールです")
+    if not os.path.exists(CSV_RAW):
+        issues.append(f"入力CSVなし: {CSV_RAW}")
+    nicks_path = os.path.join(PROJECT_ROOT, "pedigree_output", "nicks_feature.csv")
+    if not os.path.exists(nicks_path):
+        issues.append(f"nicks特徴量なし: {nicks_path}")
+    return issues
 
 def feature_engineering():
+    if pd is None:
+        raise RuntimeError("pandas が未インストールのため feature_eng_02 を実行できません")
+    from pipeline.db_sync_42 import add_ingest_meta, write_snapshot
+
     print(f"⚙️ [{datetime.now()}] 特徴量計算開始...")
-    
-    df = pd.read_csv("D:\\keiba_ai\\keiba_data.csv",
+
+    df = pd.read_csv(CSV_RAW,
                      encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
+    df = df.drop(columns=[c for c in LEAKY_DERIVED_FEATURE_COLUMNS if c in df.columns])
     df = df.fillna(0)
     
     # 日付でソート
@@ -36,10 +66,6 @@ def feature_engineering():
         df.groupby('ketto_toroku_bango')['kakutei_chakujun']
         .transform(lambda x: x.shift(1).rolling(3, min_periods=1).mean())
     )
-    df['past3_avg_odds'] = (
-        df.groupby('ketto_toroku_bango')['tansho_odds']
-        .transform(lambda x: x.shift(1).rolling(3, min_periods=1).mean())
-    )
     df['total_races'] = df.groupby('ketto_toroku_bango').cumcount()
     df['win_count'] = (
         df.groupby('ketto_toroku_bango')['kakutei_chakujun']
@@ -47,7 +73,6 @@ def feature_engineering():
     )
     df['win_rate'] = df['win_count'] / (df['total_races'] + 1)
     df['prev_chakujun'] = df.groupby('ketto_toroku_bango')['kakutei_chakujun'].shift(1).fillna(0)
-    df['prev_odds'] = df.groupby('ketto_toroku_bango')['tansho_odds'].shift(1).fillna(0)
 
     # 通算勝率
     df['sogo_total'] = df['sogo_1chaku'] + df['sogo_2chaku'] + df['sogo_3chaku']
@@ -169,7 +194,7 @@ def feature_engineering():
 
     # nicks join
     print("nicks join...")
-    nicks_path = "D:\\keiba_ai\\pedigree_output\\nicks_feature.csv"
+    nicks_path = os.path.join(PROJECT_ROOT, "pedigree_output", "nicks_feature.csv")
     try:
         nicks_df = pd.read_csv(nicks_path, encoding="utf-8-sig")
         nick_cols = ['chichi', 'haha_chichi',
@@ -191,7 +216,7 @@ def feature_engineering():
             df[col] = 0.0
 
     # save
-    df.to_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df.to_csv(CSV_FEATURES,
               index=False, encoding="utf-8-sig")
     try:
         from pipeline.db_sync_42 import add_ingest_meta, write_snapshot
@@ -211,4 +236,18 @@ def feature_engineering():
     return df
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="基本特徴量生成")
+    parser.add_argument("--dry-run", action="store_true", help="依存関係と入力ファイルだけ確認する")
+    args, _ = parser.parse_known_args()
+
+    if args.dry_run:
+        issues = check_runtime()
+        if issues:
+            print("[feature_eng_02] dry-run: 要確認")
+            for issue in issues:
+                print(f"  - {issue}")
+        else:
+            print("[feature_eng_02] dry-run: 実行要件は概ね満たしています")
+        raise SystemExit(0)
+
     feature_engineering()

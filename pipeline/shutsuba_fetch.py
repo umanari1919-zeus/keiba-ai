@@ -6,21 +6,53 @@
 
 依存: httpx, beautifulsoup4
 """
+from __future__ import annotations
+
+import argparse
 import re
 import os
 import json
 import time
-import psycopg2
-import psycopg2.extras
-import pandas as pd
-import numpy as np
+import pathlib
+import sys
 from datetime import datetime
 from typing import Optional, List, Dict
 
-from pipeline.db_sync_42 import add_ingest_meta, write_snapshot
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-BASE_DIR = "D:\\keiba_ai"
-DATA_DIR = os.path.join(BASE_DIR, "data")
+try:
+    import psycopg2
+    import psycopg2.extras
+except ImportError:
+    psycopg2 = None
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+from pipeline.config import BASE_DIR, DATA_DIR, DB_CONFIG
+
+
+def check_runtime() -> list[str]:
+    issues = []
+    if psycopg2 is None:
+        issues.append("psycopg2 が未インストールです")
+    if pd is None:
+        issues.append("pandas が未インストールです")
+    try:
+        import httpx  # noqa: F401
+    except ImportError:
+        issues.append("httpx が未インストールです")
+    try:
+        from bs4 import BeautifulSoup  # noqa: F401
+    except ImportError:
+        issues.append("beautifulsoup4 が未インストールです")
+    nicks_path = os.path.join(BASE_DIR, "pedigree_output", "nicks_feature.csv")
+    if not os.path.exists(nicks_path):
+        issues.append(f"nicks特徴量なし: {nicks_path}")
+    return issues
 
 KEIBAJO_JV = {
     "01":"札幌","02":"函館","03":"福島","04":"新潟","05":"東京",
@@ -41,12 +73,9 @@ KEIBAJO_NAME2CODE.update({
     "札幌": "01", "函館": "02",
 })
 
-DB_CONFIG = dict(host="127.0.0.1", port=5433, dbname="mykeibadb",
-                 user="postgres",
-                 options="-c client_encoding=UTF8")
-
-
 def _db_query(sql: str, params=None) -> List[Dict]:
+    if psycopg2 is None:
+        raise RuntimeError("psycopg2 が未インストールのため DB 問い合わせできません")
     last_err = None
     for attempt in range(1, 4):
         try:
@@ -200,7 +229,6 @@ def _build_horse_history() -> pd.DataFrame:
                 ketto_toroku_bango,
                 race_code,
                 kakutei_chakujun::int AS chakujun,
-                tansho_odds::numeric  AS odds,
                 kyakushitsu_hantei,
                 kaisai_nen,
                 kaisai_gappi,
@@ -208,8 +236,6 @@ def _build_horse_history() -> pd.DataFrame:
             FROM umagoto_race_joho
             WHERE kakutei_chakujun ~ '^[0-9]+$'
               AND kakutei_chakujun::int > 0
-              AND tansho_odds ~ '^[0-9]+$'
-              AND tansho_odds::int > 0
         )
         SELECT
             ketto_toroku_bango,
@@ -223,10 +249,8 @@ def _build_horse_history() -> pd.DataFrame:
             COUNT(*) AS sogo_total,
             -- 直近3走平均
             AVG(CASE WHEN rn<=3 THEN chakujun END) AS past3_avg_chakujun,
-            AVG(CASE WHEN rn<=3 THEN odds END) / 10.0 AS past3_avg_odds,
             -- 直近1走
             MAX(CASE WHEN rn=1 THEN chakujun END) AS prev_chakujun,
-            MAX(CASE WHEN rn=1 THEN odds END) / 10.0 AS prev_odds,
             -- 脚質
             AVG(CASE WHEN kyakushitsu_hantei='逃' THEN 1 ELSE 0 END) AS kyakushitsu_keiko_nige,
             AVG(CASE WHEN kyakushitsu_hantei='先' THEN 1 ELSE 0 END) AS kyakushitsu_keiko_senko,
@@ -266,7 +290,6 @@ def _build_prev_race_features() -> pd.DataFrame:
                 u.ketto_toroku_bango,
                 u.kishu_code,
                 u.kakutei_chakujun::int AS chakujun,
-                u.tansho_odds::numeric  AS odds,
                 u.keibajo_code,
                 r.kyori,
                 r.grade_code,
@@ -280,12 +303,10 @@ def _build_prev_race_features() -> pd.DataFrame:
             FROM umagoto_race_joho u
             JOIN race_shosai r ON u.race_code = r.race_code
             WHERE u.kakutei_chakujun ~ '^[0-9]+'
-              AND u.tansho_odds ~ '^[0-9]+'
         )
         SELECT
             ketto_toroku_bango,
             MAX(CASE WHEN rn=1 THEN chakujun END) AS prev_chakujun,
-            MAX(CASE WHEN rn=1 THEN odds END) / 10.0 AS prev_odds,
             MAX(CASE WHEN rn=1 THEN keibajo_code END) AS prev_keibajo,
             MAX(CASE WHEN rn=1 THEN kyori END)::int   AS prev_kyori,
             MAX(CASE WHEN rn=1 THEN grade_code END)   AS prev_grade,
@@ -488,6 +509,11 @@ def build_today_entries(date_str: Optional[str] = None) -> pd.DataFrame:
     当日の全出馬表を取得して特徴量付き DataFrame を返す。
     date_str: 'YYYYMMDD'（省略時は今日）
     """
+    if pd is None:
+        raise RuntimeError("pandas が未インストールのため shutsuba_fetch を実行できません")
+    if psycopg2 is None:
+        raise RuntimeError("psycopg2 が未インストールのため shutsuba_fetch を実行できません")
+
     if date_str is None:
         date_str = datetime.now().strftime("%Y%m%d")
 
@@ -600,14 +626,12 @@ def build_today_entries(date_str: Optional[str] = None) -> pd.DataFrame:
                 if not prev_df.empty and ketto in prev_df.index:
                     pv = prev_df.loc[ketto]
                     row["prev_chakujun"]    = int(pv.get("prev_chakujun", 0) or 0)
-                    row["prev_odds"]        = float(pv.get("prev_odds", 0) or 0)
                     row["prev_keibajo"]     = str(pv.get("prev_keibajo", "") or "")
                     row["prev_kyori"]       = int(pv.get("prev_kyori", 0) or 0)
                     row["prev_grade_score"] = int(pv.get("prev_grade_score", 1) or 1)
                     row["kishu_change"]     = int(pv.get("kishu_change", 0) or 0)
                 else:
                     row.setdefault("prev_chakujun", 0)
-                    row.setdefault("prev_odds", 0)
                     row.setdefault("prev_keibajo", "")
                     row.setdefault("prev_kyori", 0)
                     row.setdefault("prev_grade_score", 1)
@@ -690,6 +714,7 @@ def save_today_entries(date_str=None) -> str:
     out = os.path.join(DATA_DIR, f"today_entries_{date_str}.csv")
     df.to_csv(out, index=False, encoding="utf-8-sig")
     try:
+        from pipeline.db_sync_42 import add_ingest_meta, write_snapshot
         snapshot = add_ingest_meta(df.assign(trade_date=date_str), source_name=f"shutsuba_fetch:{date_str}")
         ok = write_snapshot(
             snapshot,
@@ -706,6 +731,19 @@ def save_today_entries(date_str=None) -> str:
 
 
 if __name__ == "__main__":
-    import sys
-    date_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    save_today_entries(date_arg)
+    parser = argparse.ArgumentParser(description="当日出馬表フェッチャー")
+    parser.add_argument("date", nargs="?", default=None, help="対象日 YYYYMMDD")
+    parser.add_argument("--dry-run", action="store_true", help="依存関係と補助ファイルだけ確認する")
+    args, _ = parser.parse_known_args()
+
+    if args.dry_run:
+        issues = check_runtime()
+        if issues:
+            print("[shutsuba_fetch] dry-run: 要確認")
+            for issue in issues:
+                print(f"  - {issue}")
+        else:
+            print("[shutsuba_fetch] dry-run: 実行要件は概ね満たしています")
+        raise SystemExit(0)
+
+    save_today_entries(args.date)

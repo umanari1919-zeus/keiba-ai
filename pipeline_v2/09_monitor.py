@@ -19,11 +19,11 @@ import sys
 import uuid
 from datetime import datetime, timezone
 
-_BASE_DIR = pathlib.Path(r"D:\keiba_ai")
-# BASE_DIR を必ず先頭に (worktree より優先)
-if str(_BASE_DIR) in sys.path:
-    sys.path.remove(str(_BASE_DIR))
-sys.path.insert(0, str(_BASE_DIR))
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+# プロジェクトルートを必ず先頭に (worktree より優先)
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 BASE    = pathlib.Path(__file__).parent
 LOG_DIR = BASE / "logs"
@@ -59,7 +59,7 @@ def main(trace_id: str = "", run_tag: str = "", dry_run: bool = False) -> int:
     meta = AgentMeta(trace_id=trace_id, run_tag=run_tag)
 
     # ─── MonitorAgent: auto_stop 判定 ────────────────────────────
-    mon_result = MonitorAgent(dry_run=False).execute(meta, {})
+    mon_result = MonitorAgent(dry_run=dry_run).execute(meta, {})
     auto_stop  = False
     alerts_mon: list = []
     if mon_result.ok:
@@ -70,7 +70,7 @@ def main(trace_id: str = "", run_tag: str = "", dry_run: bool = False) -> int:
         log.warning("MonitorAgent 失敗: %s", mon_result.error)
 
     # ─── OpsAgent: システムヘルス ────────────────────────────────
-    ops_result = OpsAgent(dry_run=False).execute(meta, {})
+    ops_result = OpsAgent(dry_run=dry_run).execute(meta, {})
     ops_ok     = True
     alerts_ops: list = []
     if ops_result.ok:

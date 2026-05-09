@@ -2,7 +2,9 @@ import json
 import os
 from datetime import datetime
 
-BANKROLL_FILE = "D:\\keiba_ai\\data\\bankroll.json"
+from pipeline.config import DATA_DIR
+
+BANKROLL_FILE = os.path.join(DATA_DIR, "bankroll.json")
 KELLY_FRACTION = 0.10  # 1/10ケリー（WF検証DD64%→安全係数に引き下げ）
 MAX_BET_RATIO = 0.05  # 1レース最大5%まで
 

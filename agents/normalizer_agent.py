@@ -13,16 +13,16 @@ import pathlib
 import subprocess
 import sys
 
-import pandas as pd
-
 from .base_agent import BaseAgent, AgentMeta
 from .audit_logger import sha256_of
+from .path_config import BASE_DIR, DATA_DIR
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 
 log = logging.getLogger(__name__)
-
-BASE_DIR = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-DATA_DIR = BASE_DIR / "data"
-
 
 class NormalizerAgent(BaseAgent):
     """
@@ -37,6 +37,9 @@ class NormalizerAgent(BaseAgent):
     MISMATCH_RATE_THRESHOLD = 0.02
 
     def _run(self, meta: AgentMeta, payload: dict) -> dict:
+        if pd is None:
+            raise RuntimeError("pandas が未インストールのため normalizer を実行できません")
+
         csv_path = BASE_DIR / "keiba_data.csv"
 
         if not csv_path.exists():

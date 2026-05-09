@@ -10,6 +10,7 @@ keiba_data_features.csv
 keiba_data_features_backup.csv
 *.pkl
 *.pth
+pipeline_v2/model_lgbm_v2.txt
 *.sqlite
 *.parquet
 
@@ -27,9 +28,13 @@ run_all_out*.txt
 
 # ─── pipeline_v2 実行ログ・レポート ─────────────────────────
 pipeline_v2/logs/
+pipeline_v2/alerts/
+reports/morning_*.txt
+reports/note_*.md
 logs/
 canary_report_*.json
 canary_*.log
+D:*
 
 # ─── Python キャッシュ ──────────────────────────────────────
 __pycache__/
@@ -41,6 +46,7 @@ build/
 
 # ─── Claude セッションデータ ────────────────────────────────
 .claude/
+.runtime/
 
 # ─── IDE / OS ───────────────────────────────────────────────
 .vscode/

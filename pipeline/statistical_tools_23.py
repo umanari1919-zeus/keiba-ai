@@ -12,6 +12,11 @@ import pickle
 import json
 import os
 from datetime import datetime
+from pipeline.config import BASE_DIR, CSV_FEATURES, DATA_DIR
+from pipeline.native_runtime import ensure_native_runtime
+
+ensure_native_runtime()
+
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
@@ -20,9 +25,23 @@ import optuna
 import lightgbm as lgb
 from sklearn.model_selection import cross_val_score
 
-MODEL_FILE = "D:\\keiba_ai\\model_v8.pkl"
-OUTPUT_DIR = "D:\\keiba_ai\\data"
+MODEL_FILE = os.path.join(BASE_DIR, "model_v8.pkl")
+OUTPUT_DIR = DATA_DIR
 optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+
+def _numeric_feature_frame(df: pd.DataFrame, features: list) -> pd.DataFrame:
+    cols = [f for f in features if f in df.columns]
+    X = df[cols].copy()
+    for col in X.columns:
+        if pd.api.types.is_numeric_dtype(X[col]):
+            continue
+        converted = pd.to_numeric(X[col], errors="coerce")
+        if converted.notna().sum() > 0:
+            X[col] = converted
+        else:
+            X[col] = pd.factorize(X[col].astype(str).fillna(""))[0]
+    return X.fillna(0).astype(float)
 
 
 # ──────────────────────────────────────────────
@@ -32,7 +51,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 def bayesian_feature_selection(df: pd.DataFrame, features: list,
                                 n_trials=50) -> list:
     """Optuna で最も精度に寄与する特徴量サブセットを探索"""
-    X = df[[f for f in features if f in df.columns]].fillna(0)
+    X = _numeric_feature_frame(df, features)
     y = df['kakutei_chakujun'].fillna(0)
 
     def objective(trial):
@@ -41,7 +60,7 @@ def bayesian_feature_selection(df: pd.DataFrame, features: list,
         if not selected:
             return 0.0
         model = lgb.LGBMClassifier(n_estimators=100, verbose=-1, n_jobs=1)
-        scores = cross_val_score(model, X[selected], y, cv=3, scoring='accuracy', n_jobs=-1)
+        scores = cross_val_score(model, X[selected], y, cv=3, scoring='accuracy', n_jobs=1)
         return scores.mean()
 
     study = optuna.create_study(direction='maximize')
@@ -58,7 +77,7 @@ def bayesian_feature_selection(df: pd.DataFrame, features: list,
 # ──────────────────────────────────────────────
 
 def run_pca_analysis(df: pd.DataFrame, features: list, n_components=10) -> pd.DataFrame:
-    X = df[[f for f in features if f in df.columns]].fillna(0).astype(float)
+    X = _numeric_feature_frame(df, features)
     scaler = StandardScaler()
     Xs     = scaler.fit_transform(X)
 
@@ -81,7 +100,9 @@ def run_pca_analysis(df: pd.DataFrame, features: list, n_components=10) -> pd.Da
     top = loadings['PC1'].abs().sort_values(ascending=False).head(10)
     print(f"  🔝 PC1への寄与度TOP5: {list(top.head(5).index)}")
 
-    return pd.concat([df.reset_index(drop=True), pca_df], axis=1)
+    result = pd.concat([df.reset_index(drop=True), pca_df], axis=1)
+    result.attrs["explained_variance_ratio"] = pca.explained_variance_ratio_.tolist()
+    return result
 
 
 # ──────────────────────────────────────────────
@@ -159,6 +180,7 @@ def survival_analysis_peak(df: pd.DataFrame) -> pd.DataFrame:
     df['age_experience'] = df['barei'] * df['total_races']
 
     print(f"  ⏳ 能力ピーク年齢: {peak_age}歳")
+    df.attrs["peak_age"] = int(peak_age)
     return df
 
 
@@ -260,7 +282,7 @@ def run_statistical_analysis():
     print("📐 統計・数理分析")
     print("="*55)
 
-    df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df = pd.read_csv(CSV_FEATURES,
                      encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
 
     with open(MODEL_FILE, 'rb') as f:
@@ -280,7 +302,7 @@ def run_statistical_analysis():
     run_pca_analysis(df, features, n_components=5)
 
     df = df.fillna(0)
-    df.to_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df.to_csv(CSV_FEATURES,
               index=False, encoding="utf-8-sig")
     print(f"\n  ✅ 統計特徴量追加完了: {len(df.columns)}列")
 

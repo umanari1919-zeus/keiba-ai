@@ -18,16 +18,13 @@ import json
 import logging
 import math
 import os
-import pathlib
 from datetime import datetime, timezone
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
+from .path_config import DATA_DIR
 
 log = logging.getLogger(__name__)
-
-BASE_DIR = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-DATA_DIR = BASE_DIR / "data"
 
 # 閾値定数（manifest auto_stop_conditions に連動）
 STEAM_DROP_PCT   = 0.15   # 15% 以上のオッズ下落 → STEAM

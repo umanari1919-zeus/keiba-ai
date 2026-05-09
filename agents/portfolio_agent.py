@@ -17,15 +17,14 @@ import importlib.util
 import json
 import logging
 import os
-import pathlib
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
+from .path_config import BASE_DIR, DATA_DIR
 
 log = logging.getLogger(__name__)
 
-BASE_DIR    = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-BANKROLL_FILE = BASE_DIR / "data" / "bankroll.json"
+BANKROLL_FILE = DATA_DIR / "bankroll.json"
 DEFAULT_BANKROLL = 100_000  # 初期資金 10 万円
 
 
@@ -135,7 +134,10 @@ class PortfolioAgent(BaseAgent):
                     "race_code": race_id,
                     "umaban":    b.get("entry_id", ""),
                     "win_prob":  b.get("win_prob", 0.0),
+                    "win_probability": b.get("win_prob", 0.0),
                     "tansho_odds": b.get("adjusted_odds", b.get("odds", 10.0)),
+                    "odds": b.get("adjusted_odds", b.get("odds", 10.0)),
+                    "expected_value": b.get("ev_after_slippage", b.get("expected_return", 0.0)),
                 }
                 for b in bets
             ]
@@ -179,8 +181,10 @@ class PortfolioAgent(BaseAgent):
                 "race_code": b.get("race_id", ""),
                 "umaban":    b.get("entry_id", ""),
                 "win_prob":  b.get("win_prob", 0.0),
+                "win_probability": b.get("win_prob", 0.0),
                 "odds":      b.get("adjusted_odds", b.get("odds", 10.0)),
                 "ev":        b.get("ev_after_slippage", b.get("ticket_ev", 0.0)),
+                "expected_value": b.get("ev_after_slippage", b.get("ticket_ev", 0.0)),
                 **{k: v for k, v in b.items()},  # 元の全フィールドを保持
             }
             for b in ticket_picks

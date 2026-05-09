@@ -1,12 +1,18 @@
-import tweepy
-import pandas as pd
-import pickle
-from dotenv import load_dotenv
+import argparse
 import os
 from datetime import datetime
 
+import pandas as pd
+from dotenv import load_dotenv
+
+from pipeline.config import BASE_DIR
+
 # .envファイルからAPIキーを読み込む
-load_dotenv("D:\\keiba_ai\\.env")
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+
+def _env_truthy(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 def create_post_text(race_code, bamei, odds, kishumei):
     """うまなり地蔵スタイルの投稿文を生成"""
@@ -30,9 +36,16 @@ def create_post_text(race_code, bamei, odds, kishumei):
     
     return text
 
-def post_to_x(text):
+def post_to_x(text, *, live: bool = False):
     """Xに投稿する"""
-    
+    if not (live or _env_truthy("KEIBA_SOCIAL_LIVE")):
+        print("⏩ DRY-RUN: 実投稿は --live または KEIBA_SOCIAL_LIVE=1 が必要です")
+        print("📝 投稿予定テキスト：")
+        print("="*40)
+        print(text)
+        print("="*40)
+        return False
+
     api_key = os.getenv("X_API_KEY")
     api_secret = os.getenv("X_API_SECRET")
     access_token = os.getenv("X_ACCESS_TOKEN")
@@ -46,7 +59,13 @@ def post_to_x(text):
         print(text)
         print("="*40)
         return False
-    
+
+    try:
+        import tweepy
+    except ImportError:
+        print("❌ tweepy が未インストールのため投稿できません")
+        return False
+
     try:
         client = tweepy.Client(
             consumer_key=api_key,
@@ -61,12 +80,12 @@ def post_to_x(text):
         print(f"❌ 投稿失敗：{e}")
         return False
 
-def generate_and_post():
+def generate_and_post(*, live: bool = False):
     print(f"📱 [{datetime.now()}] X投稿生成開始...")
     
     # 予想結果を読み込む
     try:
-        df = pd.read_csv("D:\\keiba_ai\\simulation_2025.csv",
+        df = pd.read_csv(os.path.join(BASE_DIR, "simulation_2025.csv"),
                          encoding="utf-8-sig", on_bad_lines="skip")
     except:
         print("❌ simulation_2025.csvが見つかりません")
@@ -94,7 +113,10 @@ def generate_and_post():
     print(text)
     print("="*40)
     
-    post_to_x(text)
+    post_to_x(text, live=live)
 
 if __name__ == "__main__":
-    generate_and_post()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--live", action="store_true", help="実投稿を許可（デフォルトはdry-run）")
+    args = parser.parse_args()
+    generate_and_post(live=args.live)

@@ -4,9 +4,10 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 import pickle
+from pipeline.config import BASE_DIR, CSV_FEATURES
 
 print("📂 データ読み込み中...")
-df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv", encoding="utf-8-sig")
+df = pd.read_csv(CSV_FEATURES, encoding="utf-8-sig", low_memory=False, on_bad_lines="skip")
 
 # NaNを0で埋める
 df = df.fillna(0)
@@ -17,11 +18,11 @@ print(f"件数：{len(df):,}件")
 features = [
     'barei', 'seibetsu_code', 'kishu_code', 'chokyoshi_code',
     'futan_juryo', 'bataiju', 'zogen_sa', 'zogen_fugo',
-    'tansho_odds', 'tansho_ninkijun', 'kyakushitsu_hantei',
+    'kyakushitsu_hantei',
     'kyori', 'track_code', 'tenko_code',
     'shiba_babajotai_code', 'dirt_babajotai_code', 'shusso_tosu',
     # 新しい特徴量！
-    'past3_avg_chakujun', 'past3_avg_odds',
+    'past3_avg_chakujun',
     'total_races', 'win_count', 'win_rate'
 ]
 
@@ -60,6 +61,6 @@ for i, (feat, imp) in enumerate(importances.head(10).items()):
     print(f"  {i+1}位: {feat}（{imp:.3f}）")
 
 # モデルを保存
-with open("D:\\keiba_ai\\model_v2.pkl", "wb") as f:
+with open(f"{BASE_DIR}/model_v2.pkl", "wb") as f:
     pickle.dump(model, f)
 print("\n💾 model_v2.pkl に保存しました！")

@@ -18,17 +18,20 @@ import importlib.util
 import json
 import logging
 import os
-import pathlib
+import pickle
 from datetime import datetime, timezone
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
+from .path_config import BASE_DIR, DATA_DIR
 
 log = logging.getLogger(__name__)
 
-BASE_DIR    = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
 FEAT_FILE   = BASE_DIR / "keiba_data_features.csv"
-RESULT_FILE = BASE_DIR / "data" / "statistics_summary.json"
+MODEL_FILE  = BASE_DIR / "model_v8.pkl"
+RESULT_FILE = DATA_DIR / "statistics_summary.json"
+DEFAULT_MAX_ROWS = int(os.getenv("KEIBA_STATISTICS_MAX_ROWS", "50000"))
+LEAKY_FEATURE_TOKENS = ("odds", "ninki", "popular")
 
 
 class StatisticsAgent(BaseAgent):
@@ -65,6 +68,16 @@ class StatisticsAgent(BaseAgent):
             log.warning("CSV 読み込み失敗: %s", exc)
             return self._empty_result(str(exc))
 
+        features = self._load_model_features(df)
+        if not features:
+            log.warning("統計分析対象の特徴量なし")
+            return self._empty_result("features unavailable")
+
+        work_df = df
+        if DEFAULT_MAX_ROWS > 0 and len(work_df) > DEFAULT_MAX_ROWS:
+            work_df = work_df.sample(n=DEFAULT_MAX_ROWS, random_state=42).reset_index(drop=True)
+            log.info("統計分析サンプル適用: %d/%d 行", len(work_df), len(df))
+
         result: dict[str, Any] = {
             "timestamp":  datetime.now(timezone.utc).isoformat(),
             "trace_id":   meta.trace_id,
@@ -74,7 +87,9 @@ class StatisticsAgent(BaseAgent):
         # ① ベイズ特徴選択
         selected_features: list[str] = []
         try:
-            sel = mod.bayesian_feature_selection(df)
+            trial_count = int(payload.get("feature_trials", 10))
+            feature_subset = features[: min(len(features), int(payload.get("feature_selection_max_features", 40)))]
+            sel = mod.bayesian_feature_selection(work_df, feature_subset, n_trials=trial_count)
             selected_features = list(sel) if sel is not None else []
             log.info("ベイズ特徴選択: %d 特徴量選択", len(selected_features))
         except Exception as exc:
@@ -84,10 +99,12 @@ class StatisticsAgent(BaseAgent):
         # ② PCA 分析
         pca_variance_ratio: list[float] = []
         try:
-            pca_res = mod.run_pca_analysis(df, n_components=10)
+            pca_res = mod.run_pca_analysis(work_df, features, n_components=10)
             if pca_res is not None:
                 if hasattr(pca_res, "explained_variance_ratio_"):
                     pca_variance_ratio = pca_res.explained_variance_ratio_.tolist()
+                elif hasattr(pca_res, "attrs") and pca_res.attrs.get("explained_variance_ratio"):
+                    pca_variance_ratio = [float(v) for v in pca_res.attrs["explained_variance_ratio"]]
                 elif isinstance(pca_res, (list, tuple)):
                     pca_variance_ratio = [float(v) for v in pca_res]
             log.info("PCA: 第1主成分寄与率=%.3f", pca_variance_ratio[0] if pca_variance_ratio else 0)
@@ -98,7 +115,7 @@ class StatisticsAgent(BaseAgent):
         # ③ 馬タイプクラスタリング
         cluster_summary: dict = {}
         try:
-            clusters = mod.horse_type_clustering(df, n_clusters=n_clusters)
+            clusters = mod.horse_type_clustering(work_df.copy(), n_clusters=n_clusters)
             if clusters is not None:
                 if hasattr(clusters, "labels_"):
                     import collections
@@ -106,6 +123,9 @@ class StatisticsAgent(BaseAgent):
                     cluster_summary = {f"cluster_{k}": v for k, v in counts.items()}
                 elif isinstance(clusters, dict):
                     cluster_summary = clusters
+                elif hasattr(clusters, "columns") and "horse_cluster" in clusters.columns:
+                    counts = clusters["horse_cluster"].value_counts().sort_index()
+                    cluster_summary = {f"cluster_{int(k)}": int(v) for k, v in counts.items()}
             log.info("クラスタリング完了: %d クラスタ", len(cluster_summary))
         except Exception as exc:
             log.warning("horse_type_clustering 失敗: %s", exc)
@@ -114,8 +134,15 @@ class StatisticsAgent(BaseAgent):
         # ④ 生存時間分析（ピーク年齢推定）
         peak_age_estimate: float = 0.0
         try:
-            peak = mod.survival_analysis_peak(df)
-            peak_age_estimate = float(peak) if peak is not None else 0.0
+            peak = mod.survival_analysis_peak(work_df.copy())
+            if hasattr(peak, "attrs") and peak.attrs.get("peak_age") is not None:
+                peak_age_estimate = float(peak.attrs["peak_age"])
+            elif hasattr(peak, "columns") and {"barei", "is_peak_age"}.issubset(set(peak.columns)):
+                peak_rows = peak[peak["is_peak_age"] == 1]
+                if not peak_rows.empty:
+                    peak_age_estimate = float(peak_rows["barei"].mode().iloc[0])
+            elif peak is not None:
+                peak_age_estimate = float(peak)
             log.info("ピーク年齢推定: %.1f 歳", peak_age_estimate)
         except Exception as exc:
             log.warning("survival_analysis_peak 失敗: %s", exc)
@@ -124,8 +151,12 @@ class StatisticsAgent(BaseAgent):
         # ⑤ モンテカルロ資金破産確率
         mc_ruin_probability: float = 0.0
         try:
-            ruin = mod.monte_carlo_risk_analysis(df, n_simulations=mc_sims)
-            mc_ruin_probability = float(ruin) if ruin is not None else 0.0
+            ruin = mod.monte_carlo_risk_analysis(n_simulations=mc_sims)
+            if isinstance(ruin, dict):
+                mc_ruin_probability = float(ruin.get("ruin_rate", 0.0))
+                result["mc_summary"] = ruin
+            elif ruin is not None:
+                mc_ruin_probability = float(ruin)
             log.info("モンテカルロ破産確率: %.3f", mc_ruin_probability)
         except Exception as exc:
             log.warning("monte_carlo_risk_analysis 失敗: %s", exc)
@@ -170,3 +201,34 @@ class StatisticsAgent(BaseAgent):
             "result_path":         str(RESULT_FILE),
             "skipped_reason":      reason,
         }
+
+    def _load_model_features(self, df) -> list[str]:
+        if MODEL_FILE.exists():
+            try:
+                with MODEL_FILE.open("rb") as f:
+                    saved = pickle.load(f)
+                features = saved.get("features", [])
+                if features:
+                    return [
+                        str(f) for f in features
+                        if f in df.columns and not self._is_leaky_feature(str(f))
+                    ]
+            except Exception as exc:
+                log.warning("モデル特徴量読み込み失敗: %s", exc)
+
+        numeric_cols = []
+        for col in df.columns:
+            name = str(col)
+            if name in {"kakutei_chakujun", "race_code"} or self._is_leaky_feature(name):
+                continue
+            try:
+                if str(df[col].dtype).startswith(("int", "float", "bool")):
+                    numeric_cols.append(name)
+            except Exception:
+                continue
+        return numeric_cols[:200]
+
+    @staticmethod
+    def _is_leaky_feature(name: str) -> bool:
+        lowered = name.lower()
+        return any(token in lowered for token in LEAKY_FEATURE_TOKENS)

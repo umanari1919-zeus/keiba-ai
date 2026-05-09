@@ -19,19 +19,27 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import logging
 import math
-import os
 import pathlib
 import sys
 import uuid
+from collections import defaultdict
 from datetime import datetime, timezone
-
-import pandas as pd
+from typing import Any
 
 # ─── パス設定 ────────────────────────────────────────────────
-BASE_DIR = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-DATA_DIR = BASE_DIR / "data"
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from pipeline.config import BASE_DIR as CONFIG_BASE_DIR, DATA_DIR as CONFIG_DATA_DIR, DB_URL
+
+BASE_DIR = pathlib.Path(CONFIG_BASE_DIR)
+DATA_DIR = pathlib.Path(CONFIG_DATA_DIR)
+DATA_DIR.mkdir(exist_ok=True)
 
 LOG_DIR = pathlib.Path(__file__).parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -47,8 +55,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-DB_URL = os.getenv("KEIBA_DB_URL", "postgresql://postgres:trust@localhost:5433/mykeibadb")
-
 # upset_score の重み
 W_AVG_GAP    = 0.30
 W_ODDS_STD   = 0.25
@@ -60,19 +66,29 @@ W_SHOCK      = 0.20
 # データ読み込み
 # ─────────────────────────────────────────────────────────────
 
-def load_ev_data() -> pd.DataFrame:
+def load_ev_data() -> Any:
     """ev_analysis_{year}.csv を読み込む（当年 → 前年の順）。"""
+    try:
+        import pandas as pd
+    except ImportError:
+        pd = None
+
     year = datetime.now().year
     # BASE_DIR 直下と DATA_DIR の両方を検索
     for y in [year, year - 1]:
         for search_dir in [BASE_DIR, DATA_DIR]:
             path = search_dir / f"ev_analysis_{y}.csv"
             if path.exists():
-                df = pd.read_csv(path, on_bad_lines="skip", low_memory=False)
-                log.info("EV データ読み込み: %s (%d 行)", path, len(df))
-                return df
-    log.warning("ev_analysis CSV が見つかりません。空 DataFrame を返します。")
-    return pd.DataFrame()
+                if pd is not None:
+                    df = pd.read_csv(path, on_bad_lines="skip", low_memory=False)
+                    log.info("EV データ読み込み: %s (%d 行)", path, len(df))
+                    return df
+                with path.open("r", encoding="utf-8-sig", newline="") as f:
+                    rows = list(csv.DictReader(f))
+                log.info("EV データ読み込み(csv): %s (%d 行)", path, len(rows))
+                return rows
+    log.warning("ev_analysis CSV が見つかりません。空データを返します。")
+    return [] if pd is None else pd.DataFrame()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -86,16 +102,57 @@ def _safe_float(val, default: float = 0.0) -> float:
         return default
 
 
-def compute_race_metrics(group: pd.DataFrame) -> dict:
+def _group_columns(group: Any) -> list[str]:
+    if hasattr(group, "columns"):
+        return list(group.columns)
+    if isinstance(group, list) and group:
+        return list(group[0].keys())
+    return []
+
+
+def _group_values(group: Any, column: str) -> list[Any]:
+    if hasattr(group, "columns"):
+        return list(group[column])
+    if isinstance(group, list):
+        return [row.get(column) for row in group]
+    return []
+
+
+def _build_row_groups(rows: list[dict[str, Any]]) -> list[tuple[str, list[dict[str, Any]]]]:
+    columns = list(rows[0].keys()) if rows else []
+    if "race_code" in columns and "race_id" not in columns:
+        grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in rows:
+            race_key = str(row.get("race_code", ""))[:14]
+            if race_key:
+                grouped[race_key].append({**row, "_race_key": race_key})
+        return list(grouped.items())
+
+    race_id_col = next(
+        (c for c in ["race_id", "race_code", "レースID", "race_key"] if c in columns),
+        None,
+    )
+    if race_id_col is None:
+        return []
+
+    grouped = defaultdict(list)
+    for row in rows:
+        race_id = str(row.get(race_id_col, ""))
+        if race_id:
+            grouped[race_id].append(row)
+    return list(grouped.items())
+
+
+def compute_race_metrics(group: Any) -> dict:
     """1 レース分の DataFrame → 指標 dict を返す。"""
     # オッズ列を探す
     odds_col = next(
-        (c for c in ["tansho_odds", "odds_decimal", "odds", "min_odds"] if c in group.columns),
+        (c for c in ["tansho_odds", "odds_decimal", "odds", "min_odds"] if c in _group_columns(group)),
         None,
     )
     odds_vals: list[float] = []
     if odds_col:
-        raw = [_safe_float(v) for v in group[odds_col] if _safe_float(v) > 1.0]
+        raw = [_safe_float(v) for v in _group_values(group, odds_col) if _safe_float(v) > 1.0]
         # tansho_odds は JRA 形式（実オッズ × 100）→ 100 で割って実オッズに変換
         # odds_decimal は既に実オッズ形式
         if odds_col == "tansho_odds" and raw and max(raw) > 100:
@@ -124,9 +181,9 @@ def compute_race_metrics(group: pd.DataFrame) -> dict:
     top3_prob = sum(probs[:3])  # 上位3頭の勝率合計
 
     # shock_score: 高 EV（穴馬候補）エントリーの EV 平均
-    ev_col = next((c for c in ["expected_value", "ev", "expected_return"] if c in group.columns), None)
+    ev_col = next((c for c in ["expected_value", "ev", "expected_return"] if c in _group_columns(group)), None)
     if ev_col:
-        ev_vals = [_safe_float(v) for v in group[ev_col] if _safe_float(v) > 0]
+        ev_vals = [_safe_float(v) for v in _group_values(group, ev_col) if _safe_float(v) > 0]
         shock_score = sum(v for v in ev_vals if v > 1.15) / max(len(ev_vals), 1)
     else:
         shock_score = 0.0
@@ -211,28 +268,39 @@ def run_upsetscore(dry_run: bool = False, run_tag: str = "") -> dict:
     dict: {races_computed, metrics_written, top_upsets: [...]}
     """
     df = load_ev_data()
-    if df.empty:
+    if df is None:
+        return {"races_computed": 0, "metrics_written": 0, "top_upsets": []}
+    if hasattr(df, "empty") and df.empty:
+        return {"races_computed": 0, "metrics_written": 0, "top_upsets": []}
+    if isinstance(df, list) and not df:
         return {"races_computed": 0, "metrics_written": 0, "top_upsets": []}
 
-    # race_id 列を特定
-    # race_code は JRA 16桁形式（末尾2桁が umaban）→ 先頭14桁でレース単位に集約
-    if "race_code" in df.columns and "race_id" not in df.columns:
-        df = df.copy()  # フラグメント警告回避
-        df["_race_key"] = df["race_code"].astype(str).str[:14]
-        race_id_col = "_race_key"
+    if isinstance(df, list):
+        grouped_rows = _build_row_groups(df)
+        if not grouped_rows:
+            log.warning("race_id 列が見つかりません。処理をスキップします。")
+            return {"races_computed": 0, "metrics_written": 0, "top_upsets": []}
     else:
-        race_id_col = next(
-            (c for c in ["race_id", "race_code", "レースID", "race_key"] if c in df.columns),
-            None,
-        )
-    if race_id_col is None:
-        log.warning("race_id 列が見つかりません。処理をスキップします。")
-        return {"races_computed": 0, "metrics_written": 0, "top_upsets": []}
+        # race_id 列を特定
+        # race_code は JRA 16桁形式（末尾2桁が umaban）→ 先頭14桁でレース単位に集約
+        if "race_code" in df.columns and "race_id" not in df.columns:
+            df = df.copy()  # フラグメント警告回避
+            df["_race_key"] = df["race_code"].astype(str).str[:14]
+            race_id_col = "_race_key"
+        else:
+            race_id_col = next(
+                (c for c in ["race_id", "race_code", "レースID", "race_key"] if c in df.columns),
+                None,
+            )
+        if race_id_col is None:
+            log.warning("race_id 列が見つかりません。処理をスキップします。")
+            return {"races_computed": 0, "metrics_written": 0, "top_upsets": []}
+        grouped_rows = list(df.groupby(race_id_col))
 
     db_rows: list[tuple] = []
     race_summaries: list[dict] = []
 
-    for race_id, group in df.groupby(race_id_col):
+    for race_id, group in grouped_rows:
         metrics = compute_race_metrics(group)
         race_summaries.append({"race_id": str(race_id), **metrics})
 

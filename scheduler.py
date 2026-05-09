@@ -1,19 +1,33 @@
-import os
-import schedule
 import time
 import subprocess
-import psycopg2
 import json
 import sys
 import pathlib
+import os
+import argparse
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
-# agents パッケージのパスを通す
-_WORKTREE = pathlib.Path(r"D:\keiba_ai\.claude\worktrees\brave-kilby-e79e98")
-if str(_WORKTREE) not in sys.path:
-    sys.path.insert(0, str(_WORKTREE))
-sys.path.insert(0, r"D:\keiba_ai")
+try:
+    import schedule
+except ImportError:
+    schedule = None
+
+try:
+    import psycopg2
+except ImportError:
+    psycopg2 = None
+
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from pipeline.config import BASE_DIR as CONFIG_BASE_DIR, DATA_DIR as CONFIG_DATA_DIR, DB_CONFIG
+
+BASE_DIR = pathlib.Path(CONFIG_BASE_DIR)
+DATA_DIR = pathlib.Path(CONFIG_DATA_DIR)
+PYTHON = os.getenv("KEIBA_PYTHON", sys.executable)
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -21,14 +35,14 @@ JST = ZoneInfo("Asia/Tokyo")
 def now_jst() -> datetime:
     return datetime.now(tz=JST)
 
-DB_CONFIG = dict(host="127.0.0.1", port=5433, dbname="mykeibadb",
-                 user="postgres", password=os.environ.get("KEIBA_DB_PASSWORD", ""))
-
 def is_jra_race_day(date: datetime = None) -> bool:
     """kaisaibiテーブルで今日がJRA開催日か確認"""
     if date is None:
         date = now_jst()
     yyyymmdd = date.strftime("%Y%m%d")
+    if psycopg2 is None:
+        print("  ⚠️ psycopg2 未インストール。開催日チェックは土日判定にフォールバック")
+        return date.weekday() in (5, 6)
     try:
         conn = psycopg2.connect(**DB_CONFIG)
         cur  = conn.cursor()
@@ -43,8 +57,6 @@ def is_jra_race_day(date: datetime = None) -> bool:
         print(f"  ⚠️ 開催日チェック失敗（DB接続エラー）: {e}")
         # DB接続失敗時は土日なら実行
         return date.weekday() in (5, 6)
-
-PYTHON = r"C:\Users\uchih\AppData\Local\Programs\Python\Python313\python.exe"
 
 MAX_RETRIES = 2
 RETRY_WAIT  = 30  # 秒
@@ -79,7 +91,6 @@ def _run_with_retry(cmd: list, *, timeout: int = 600, label: str = "") -> subpro
 def _notify_failure(label: str, exc: Exception) -> None:
     """ジョブ失敗時にメール通知を試みる。通知自体が失敗してもクラッシュしない。"""
     try:
-        sys.path.insert(0, r"D:\keiba_ai")
         from pipeline.notify_08 import send_notify
         now = now_jst().strftime("%Y-%m-%d %H:%M")
         send_notify(
@@ -102,7 +113,14 @@ def run_pipeline():
     print(f"  🏇 本日（{now.strftime('%m/%d')}）はJRA開催日 → パイプライン実行")
     try:
         _run_with_retry(
-            [PYTHON, "-X", "utf8", r"D:\keiba_ai\run_all.py", "--skip-train"],
+            [
+                PYTHON,
+                "-X",
+                "utf8",
+                str(BASE_DIR / "run_all.py"),
+                "--v2",
+                "--sync-mykeibadb",
+            ],
             timeout=1800, label="run_pipeline",
         )
         print(f"✅ [{datetime.now()}] 実行完了")
@@ -110,7 +128,7 @@ def run_pipeline():
         print(f"❌ [{datetime.now()}] パイプライン失敗: {e}")
 
 
-PAPER_TRADE_STATE = pathlib.Path(r"D:\keiba_ai\data\paper_trade_state.json")
+PAPER_TRADE_STATE = DATA_DIR / "paper_trade_state.json"
 PAPER_TRADE_DAYS  = 30  # 30日間ペーパートレード
 
 
@@ -168,9 +186,9 @@ def run_paper_trading():
 
         # ev_analysis_{year}.csv から予測を読み込む
         import pandas as pd
-        ev_path = pathlib.Path(r"D:\keiba_ai\data") / f"ev_analysis_{year}.csv"
+        ev_path = DATA_DIR / f"ev_analysis_{year}.csv"
         if not ev_path.exists():
-            ev_path = pathlib.Path(r"D:\keiba_ai") / f"ev_analysis_{year}.csv"
+            ev_path = BASE_DIR / f"ev_analysis_{year}.csv"
 
         predictions = []
         if ev_path.exists():
@@ -211,7 +229,7 @@ def _print_paper_summary(state: dict) -> None:
     print(f"  開始日:     {state.get('start_date')}")
     print(f"  開催日数:   {state.get('race_days')}日")
     print(f"  累計ベット: {state.get('total_bets')}件")
-    trade_log = pathlib.Path(r"D:\keiba_ai\data")
+    trade_log = DATA_DIR
     logs = sorted(trade_log.glob("trade_log_*.json"))
     print(f"  ログファイル: {len(logs)}件 -> {trade_log}")
     print("=" * 50)
@@ -226,12 +244,21 @@ def run_weekday_mail():
     labels = {0:"月曜:成績振り返り", 1:"火曜:特別登録馬",
               2:"水曜:注目調教馬",   3:"木曜:週末プレビュー", 4:"金曜:オッズ動向"}
     print(f"\n📧 [{now}] {labels.get(dow,'')} メール送信")
+    code = (
+        "import sys; "
+        f"sys.path.insert(0, {str(BASE_DIR)!r}); "
+        "from pipeline.notify_08 import send_daily_report; "
+        "send_daily_report()"
+    )
     subprocess.run([PYTHON, "-X", "utf8", "-c",
-        "import sys; sys.path.insert(0,r'D:\\keiba_ai'); "
-        "from pipeline.notify_08 import send_daily_report; send_daily_report()"])
+        code])
 
 
 # 開催日のみ: パイプライン（予想→メール）
+if schedule is None:
+    print("schedule が未インストールです。`pip install -r requirements.txt` 後に再実行してください。")
+    sys.exit(1)
+
 schedule.every().day.at("08:00").do(run_pipeline)
 
 # 月〜金: 曜日別情報メール
@@ -250,7 +277,7 @@ def run_odds_snapshot():
     print(f"\n  [odds-snapshot] {now.strftime('%H:%M')} オッズ取得")
     try:
         _run_with_retry(
-            [PYTHON, "-X", "utf8", r"D:\keiba_ai\pipeline\odds_scraper_36.py"],
+            [PYTHON, "-X", "utf8", str(BASE_DIR / "pipeline" / "odds_scraper_36.py")],
             timeout=120, label="odds_snapshot",
         )
     except Exception as e:
@@ -264,13 +291,13 @@ def run_rag_index_rebuild():
     """keiba_data_features.csv の更新を RAGStore に反映する週次バッチ。"""
     now = now_jst()
     print(f"\n  [rag-index] {now.strftime('%Y-%m-%d %H:%M')} RAG インデックス再構築開始")
-    rag_script = pathlib.Path(r"D:\keiba_ai\pipeline_v2\10_rag_index.py")
+    rag_script = BASE_DIR / "pipeline_v2" / "10_rag_index.py"
     if not rag_script.exists():
         print("  [rag-index] 10_rag_index.py が見つかりません。スキップ。")
         return
     try:
         _run_with_retry(
-            [PYTHON, "-X", "utf8", str(rag_script), "--limit", "50000"],
+            [PYTHON, "-X", "utf8", str(rag_script), "--limit", "50000", "--rebuild"],
             timeout=600, label="rag_index",
         )
         print(f"  [rag-index] 完了")
@@ -286,7 +313,7 @@ def run_upsetscore_weekly():
     """ev_analysis CSV の更新を race_metrics テーブルに反映する週次バッチ。"""
     now = now_jst()
     print(f"\n  [upset-score] {now.strftime('%Y-%m-%d %H:%M')} UpsetScore 再算出")
-    us_script = pathlib.Path(r"D:\keiba_ai\pipeline_v2\08_upsetscore.py")
+    us_script = BASE_DIR / "pipeline_v2" / "08_upsetscore.py"
     run_tag   = f"weekly_{now.strftime('%Y%m%d')}"
     try:
         _run_with_retry(
@@ -387,16 +414,46 @@ def run_roi_tracking():
 
 schedule.every().day.at("07:00").do(run_roi_tracking)
 
-print("=" * 50)
-print("[SCHEDULER] Umanari Jizo AI Scheduler Started")
-print("[SCHEDULE] 08:00 - Run prediction (JRA race day only)")
-print("[SCHEDULE] 08:30 - Mail daily info (Mon-Fri)")
-print("=" * 50)
-_ps = _load_paper_state()
-print(f"  Today ({now_jst().strftime('%m/%d')} JST) JRA race: {'YES' if is_jra_race_day() else 'NO'}")
-print(f"  ペーパートレード: {'稼働中' if _ps.get('active') else '終了'} ({_ps.get('race_days',0)}開催日 / {PAPER_TRADE_DAYS}日間)")
-print("  オッズスナップショット: 毎時 :02 (JRA開催日 07:00-17:00)")
 
-while True:
-    schedule.run_pending()
-    time.sleep(60)
+def print_startup_summary() -> None:
+    print("=" * 50)
+    print("[SCHEDULER] Umanari Jizo AI Scheduler Started")
+    print("[SCHEDULE] 08:00 - Run prediction (JRA race day only)")
+    print("[SCHEDULE] 08:30 - Mail daily info (Mon-Fri)")
+    print("=" * 50)
+    _ps = _load_paper_state()
+    print(f"  Today ({now_jst().strftime('%m/%d')} JST) JRA race: {'YES' if is_jra_race_day() else 'NO'}")
+    print(f"  ペーパートレード: {'稼働中' if _ps.get('active') else '終了'} ({_ps.get('race_days',0)}開催日 / {PAPER_TRADE_DAYS}日間)")
+    print("  オッズスナップショット: 毎時 :02 (JRA開催日 07:00-17:00)")
+
+
+def list_jobs() -> None:
+    print("=" * 50)
+    print("[SCHEDULER] Registered jobs")
+    print("=" * 50)
+    for idx, job in enumerate(schedule.jobs, 1):
+        next_run = job.next_run.isoformat(sep=" ") if job.next_run else "N/A"
+        print(f"{idx:02d}. next={next_run}  {job}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="うまなり地蔵AI scheduler")
+    parser.add_argument("--list-jobs", action="store_true", help="常駐せず登録ジョブ一覧だけ表示")
+    parser.add_argument("--check-now", action="store_true", help="常駐せず現在の開催日・ペーパートレード状態だけ表示")
+    args = parser.parse_args()
+
+    if args.list_jobs:
+        list_jobs()
+        return 0
+    if args.check_now:
+        print_startup_summary()
+        return 0
+
+    print_startup_summary()
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

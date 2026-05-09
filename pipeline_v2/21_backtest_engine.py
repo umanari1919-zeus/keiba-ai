@@ -20,6 +20,7 @@ def main() -> None:
     parser.add_argument("--trace_id", default="")
     parser.add_argument("--run_tag",  default="weekly")
     parser.add_argument("--year",     type=int, default=0)
+    parser.add_argument("--dry-run",  action="store_true")
     args = parser.parse_args()
 
     meta = AgentMeta(
@@ -30,10 +31,13 @@ def main() -> None:
     if args.year:
         payload["year"] = args.year
 
-    result = BacktestEngineAgent(dry_run=False).execute(meta, payload)
+    result = BacktestEngineAgent(dry_run=args.dry_run).execute(meta, payload)
     if not result.ok:
         log.error("BacktestEngineAgent 失敗: %s", result.error)
         sys.exit(1)
+    if args.dry_run:
+        log.info("グリッドサーチ dry-run 完了")
+        return
 
     out = result.output
     log.info(

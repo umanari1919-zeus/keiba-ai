@@ -1,5 +1,7 @@
 import psycopg2, pandas as pd
-conn=psycopg2.connect(host="localhost",port=5433,dbname="mykeibadb",user="postgres",password="")
+from pipeline.config import DB_CONFIG
+
+conn=psycopg2.connect(**DB_CONFIG)
 cur=conn.cursor()
 
 # umagoto_race_johoの全カラムサンプル値を確認

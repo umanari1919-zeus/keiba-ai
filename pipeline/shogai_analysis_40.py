@@ -14,11 +14,10 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 from sqlalchemy import create_engine, text
+from pipeline.config import BASE_DIR, DATA_DIR, DB_URL
 
-BASE_DIR = "D:\\keiba_ai"
-FEAT_FILE = os.path.join(BASE_DIR, "data", "keiba_data_features.csv")
-CACHE_PATH = os.path.join(BASE_DIR, "data", "shogai_race_codes.json")
-DB_URL = "postgresql://postgres:trust@localhost:5433/mykeibadb"
+FEAT_FILE = os.path.join(DATA_DIR, "keiba_data_features.csv")
+CACHE_PATH = os.path.join(DATA_DIR, "shogai_race_codes.json")
 
 CACHE_TTL_DAYS = 7
 MIN_SHOGAI_RACES = 3  # 最小障害レース数（騎手・調教師の勝率計算用）

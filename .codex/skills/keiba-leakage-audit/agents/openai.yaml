@@ -1,0 +1,3 @@
+interface:
+  display_name: "Keiba Leakage Audit"
+  short_description: "Check model inputs for odds, popularity, result, and future-data leakage."

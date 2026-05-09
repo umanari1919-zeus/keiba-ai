@@ -10,18 +10,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-import pathlib
 import subprocess
 import sys
 from datetime import datetime, timezone
+from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
+from .path_config import BASE_DIR, DATA_DIR
 
 log = logging.getLogger(__name__)
-
-BASE_DIR = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-DATA_DIR = BASE_DIR / "data"
-
 
 class PublishAgent(BaseAgent):
     """
@@ -31,6 +28,12 @@ class PublishAgent(BaseAgent):
 
     agent_id      = "publish-agent"
     agent_version = "1.0.0"
+
+    def __init__(self, *, publish_live: bool = False, **kwargs: Any):
+        super().__init__(**kwargs)
+        self.publish_live = publish_live
+        if not publish_live:
+            log.info("[publish-agent] ドラフト生成モードで起動")
 
     def _run(self, meta: AgentMeta, payload: dict) -> dict:
         explanations   = payload.get("llm_explanations", [])
@@ -50,15 +53,18 @@ class PublishAgent(BaseAgent):
             draft = self._create_draft(expl, meta)
             drafts.append(draft)
 
-            if not self.dry_run:
+            if self.publish_live:
                 pub_result = self._publish_draft(draft, meta)
                 publications.append(pub_result)
 
+        draft_path = self._save_drafts(drafts, meta) if drafts else ""
         return {
             "drafts":           drafts,
+            "draft_path":       draft_path,
             "publications":     publications,
             "approved_count":   len(approved),
             "held_back_count":  held_back,
+            "publish_live":     self.publish_live,
             "timestamp":        datetime.now(timezone.utc).isoformat(),
         }
 
@@ -100,6 +106,7 @@ class PublishAgent(BaseAgent):
             result = subprocess.run(
                 [sys.executable, str(script),
                  "--draft_path", str(msg_path),
+                 "--live",
                  "--trace_id",   meta.trace_id],
                 capture_output=True, text=True, encoding="utf-8",
                 cwd=str(BASE_DIR),
@@ -109,3 +116,12 @@ class PublishAgent(BaseAgent):
                 log.warning("social_bot_27 stderr: %s", result.stderr[:200])
 
         return {**draft, "publish_status": status}
+
+    def _save_drafts(self, drafts: list[dict], meta: AgentMeta) -> str:
+        today = datetime.now().strftime("%Y%m%d")
+        path = DATA_DIR / f"publish_drafts_{today}_{meta.trace_id[:8]}.json"
+        path.write_text(
+            json.dumps(drafts, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return str(path)

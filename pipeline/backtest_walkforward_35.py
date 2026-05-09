@@ -12,9 +12,11 @@ from typing import List, Dict, Tuple, Optional
 import warnings
 warnings.filterwarnings('ignore')
 
-BASE_DIR   = "D:\\keiba_ai"
-FEAT_FILE  = f"{BASE_DIR}\\keiba_data_features.csv"
-MODEL_FILE = f"{BASE_DIR}\\model_v8.pkl"
+from pipeline.config import BASE_DIR, CSV_FEATURES, DATA_DIR
+from pipeline.native_runtime import ensure_native_runtime
+
+FEAT_FILE  = CSV_FEATURES
+MODEL_FILE = os.path.join(BASE_DIR, "model_v8.pkl")
 
 PURGE_WEEKS   = 2     # 訓練/テスト境界のパージ幅（週）
 MIN_TRAIN_YRS = 2     # 最低訓練年数
@@ -59,6 +61,7 @@ def train_fold_model(train_df: pd.DataFrame, saved_template: dict) -> dict:
     訓練データでアンサンブルを再学習して返す。
     saved_template は model_v8.pkl の構造を踏襲。
     """
+    ensure_native_runtime()
     import lightgbm as lgb
     import xgboost as xgb
     import catboost as cb
@@ -342,7 +345,7 @@ def run_walkforward_backtest(retrain: bool = True) -> dict:
         print(f"  ⚠️  最大DD {avg_dd:.1f}% — 安全なKelly係数: {safe_kelly} 推奨")
 
     # 保存
-    os.makedirs(f"{BASE_DIR}\\data", exist_ok=True)
+    os.makedirs(DATA_DIR, exist_ok=True)
     out = {
         'mode':        mode,
         'purge_weeks': PURGE_WEEKS,
@@ -355,11 +358,12 @@ def run_walkforward_backtest(retrain: bool = True) -> dict:
         'n_positive':   int(n_positive),
         'verdict':      verdict,
     }
-    out_path = f"{BASE_DIR}\\data\\walkforward_result.json"
+    out_path = os.path.join(DATA_DIR, "walkforward_result.json")
     with open(out_path, 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False, indent=2, default=str)
 
-    result_df.to_csv(f"{BASE_DIR}\\data\\walkforward_folds.csv",
+    folds_path = os.path.join(DATA_DIR, "walkforward_folds.csv")
+    result_df.to_csv(folds_path,
                      index=False, encoding='utf-8-sig')
     print(f"\n  💾 保存: data/walkforward_result.json")
     return out

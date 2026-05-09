@@ -4,15 +4,24 @@
 """
 import sys
 import os
+import pathlib
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 JST = ZoneInfo("Asia/Tokyo")
 
-sys.path.append("D:\\keiba_ai")
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
 
-BASE_DIR = "D:\\keiba_ai"
-DATA_DIR = os.path.join(BASE_DIR, "data")
+from pipeline.config import BASE_DIR as CONFIG_BASE_DIR
+from pipeline.config import DATA_DIR as CONFIG_DATA_DIR
+from pipeline.config import MYKEIBADB_EXE as CONFIG_MYKEIBADB_EXE
+
+BASE_DIR = pathlib.Path(CONFIG_BASE_DIR)
+DATA_DIR = pathlib.Path(CONFIG_DATA_DIR)
+MYKEIBADB_EXE = pathlib.Path(CONFIG_MYKEIBADB_EXE)
 
 
 def _safe(name, fn, *args, **kwargs):
@@ -22,6 +31,46 @@ def _safe(name, fn, *args, **kwargs):
     except Exception as e:
         print(f"  ⚠️ [{name}] スキップ: {e}")
         return None
+
+
+def _run_subprocess(cmd: list[str], cwd: pathlib.Path | None = None) -> int:
+    import subprocess
+
+    return subprocess.run(cmd, cwd=str(cwd or BASE_DIR)).returncode
+
+
+def _run_mykeibadb_sync(timeout_seconds: int = 300) -> bool:
+    import subprocess
+
+    if not MYKEIBADB_EXE.exists():
+        print(f"  ⚠️ mykeibadb.exe が見つかりません: {MYKEIBADB_EXE}")
+        return False
+
+    try:
+        result = subprocess.run(
+            [str(MYKEIBADB_EXE)],
+            timeout=timeout_seconds,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(MYKEIBADB_EXE.parent),
+            stdin=subprocess.DEVNULL,
+        )
+        if result.returncode == 0:
+            print("  ✅ mykeibadb 同期完了")
+            return True
+
+        print(f"  ⚠️ mykeibadb 終了コード {result.returncode}")
+        if result.stdout:
+            print(result.stdout[-500:])
+        if result.stderr:
+            print(result.stderr[-200:])
+    except subprocess.TimeoutExpired:
+        print(f"  ⚠️ mykeibadb タイムアウト（{timeout_seconds}秒）")
+    except Exception as e:
+        print(f"  ⚠️ mykeibadb エラー: {e}")
+    return False
 
 
 def run_all(
@@ -52,32 +101,7 @@ def run_all(
 
     if not skip_fetch:
         print("\n【STEP 0/16】JV-Link DB同期 (mykeibadb.exe)")
-        import subprocess, time
-        MYKEIBADB = r"C:\Users\uchih\Downloads\mykeibadb_v3.63\mykeibadb.exe"
-        MYKEIBADB_DIR = os.path.dirname(MYKEIBADB)
-        try:
-            result = subprocess.run(
-                [MYKEIBADB],
-                timeout=300,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                cwd=MYKEIBADB_DIR,   # mykeibadb.ini を同ディレクトリで検索
-                stdin=subprocess.DEVNULL,  # ReadKey ブロックを防止
-            )
-            if result.returncode == 0:
-                print("  ✅ mykeibadb 同期完了")
-            else:
-                print(f"  ⚠️ mykeibadb 終了コード {result.returncode}")
-                if result.stdout: print(result.stdout[-500:])
-                if result.stderr: print(result.stderr[-200:])
-        except subprocess.TimeoutExpired:
-            print("  ⚠️ mykeibadb タイムアウト（300秒）")
-        except FileNotFoundError:
-            print(f"  ⚠️ mykeibadb.exe が見つかりません: {MYKEIBADB}")
-        except Exception as e:
-            print(f"  ⚠️ mykeibadb エラー: {e}")
+        _run_mykeibadb_sync()
 
         print("\n【STEP 0b/16】当日出馬表取得 (shutsuba_fetch)")
         from pipeline.shutsuba_fetch import save_today_entries
@@ -146,7 +170,7 @@ def run_all(
 
     print("\n【STEP 9/16】自動学習チェック (auto_learn_13)")
     from pipeline.auto_learn_13 import run_auto_learn, show_performance_trend
-    _safe("auto_learn", run_auto_learn, f"D:\\keiba_ai\\simulation_{year}.csv")
+    _safe("auto_learn", run_auto_learn, str(BASE_DIR / f"simulation_{year}.csv"))
 
     # ══════════════════════════════════════════════════════
     # PHASE 3: モデル学習・最適化
@@ -194,7 +218,7 @@ def run_all(
     from pipeline.predict_04 import predict_today, simulate_recovery
     today_str = datetime.now(tz=JST).strftime("%Y%m%d")
     import os as _os
-    today_file = _os.path.join("D:\\keiba_ai\\data", f"today_entries_{today_str}.csv")
+    today_file = _os.path.join(str(DATA_DIR), f"today_entries_{today_str}.csv")
     if _os.path.exists(today_file):
         print("  → 当日出馬表あり: リアル予測モードで実行")
         result = _safe("predict_today", predict_today, today_str)
@@ -284,14 +308,14 @@ def run_all(
     _safe("ollama_analyst", run_ollama_analyst, today_str)
 
     print("\n【STEP 16e】LLM解説付与 (llm_predictor)")
-    picks_path = os.path.join(DATA_DIR, f"agent_picks_{today_str}.json")
-    feat_path  = os.path.join(BASE_DIR, "keiba_data_features.csv")
+    picks_path = str(DATA_DIR / f"agent_picks_{today_str}.json")
+    feat_path  = os.path.join(str(BASE_DIR), "keiba_data_features.csv")
     if os.path.exists(picks_path):
         from pipeline.llm_predictor import add_explanations_to_picks
         explained = _safe("llm_predictor", add_explanations_to_picks,
                           picks_path, feat_path)
         if explained:
-            out_path = os.path.join(DATA_DIR, f"agent_picks_{today_str}.json")
+            out_path = os.path.join(str(DATA_DIR), f"agent_picks_{today_str}.json")
             import json as _json
             with open(out_path, "w", encoding="utf-8") as _f:
                 _json.dump(explained, _f, ensure_ascii=False, indent=2)
@@ -350,23 +374,7 @@ def run_morning(skip_social=False):
     # P1: serial data + features
     print("\n[P1] data fetch + features (serial)")
 
-    import subprocess
-    MYKEIBADB = r"C:\Users\uchih\Downloads\mykeibadb_v3.63\mykeibadb.exe"
-    MYKEIBADB_DIR = os.path.dirname(MYKEIBADB)
-    try:
-        r = subprocess.run(
-            [MYKEIBADB], timeout=300, capture_output=True,
-            text=True, encoding="utf-8", errors="replace",
-            cwd=MYKEIBADB_DIR, stdin=subprocess.DEVNULL,
-        )
-        print("  mykeibadb OK" if r.returncode == 0
-              else f"  mykeibadb rc={r.returncode}")
-    except FileNotFoundError:
-        print("  mykeibadb not found -> skip")
-    except subprocess.TimeoutExpired:
-        print("  mykeibadb timeout")
-    except Exception as e:
-        print(f"  mykeibadb: {e}")
+    _run_mykeibadb_sync()
 
     from pipeline.shutsuba_fetch import save_today_entries
     from pipeline.data_fetch_01 import fetch_data
@@ -411,12 +419,12 @@ def run_morning(skip_social=False):
         print("  bankroll protection: bets halted")
 
     _safe("auto_learn", run_auto_learn,
-          os.path.join(BASE_DIR, f"simulation_{year}.csv"))
+          os.path.join(str(BASE_DIR), f"simulation_{year}.csv"))
 
     # P4a: predict (serial)
     print("\n[P4a] predict")
     from pipeline.predict_04 import predict_today, simulate_recovery
-    today_file = os.path.join(DATA_DIR, f"today_entries_{today_str}.csv")
+    today_file = os.path.join(str(DATA_DIR), f"today_entries_{today_str}.csv")
     if os.path.exists(today_file):
         print("  today entries found: real prediction mode")
         result = _safe("predict_today", predict_today, today_str)
@@ -489,8 +497,8 @@ def run_morning(skip_social=False):
         for f in (fn, fm, fr):
             f.result()
 
-    picks_path = os.path.join(DATA_DIR, f"agent_picks_{today_str}.json")
-    feat_path  = os.path.join(BASE_DIR, "keiba_data_features.csv")
+    picks_path = os.path.join(str(DATA_DIR), f"agent_picks_{today_str}.json")
+    feat_path  = os.path.join(str(BASE_DIR), "keiba_data_features.csv")
     with ThreadPoolExecutor(max_workers=2) as ex:
         foa  = ex.submit(_safe, "ollama_analyst", run_ollama_analyst, today_str)
         fllm = None
@@ -526,24 +534,112 @@ def run_morning(skip_social=False):
     print("=" * 62)
 
 
-def run_v2_daily(trace_id: str = "") -> int:
+def run_v2_preflight(weekly: bool = False) -> int:
+    """pipeline_v2 の事前診断を実行する。"""
+    mode = "週次" if weekly else "日次"
+    print(f"pipeline_v2 {mode} preflight を実行します", flush=True)
+    cmd = [sys.executable, "-X", "utf8", str(BASE_DIR / "pipeline_v2" / "preflight_check.py")]
+    if weekly:
+        cmd.append("--weekly")
+    return _run_subprocess(cmd)
+
+
+def run_v2_runtime_check(profile: str = "all") -> int:
+    """pipeline_v2 の本実行向け依存・ファイル診断を実行する。"""
+    print(f"pipeline_v2 runtime check を実行します (profile={profile})", flush=True)
+    cmd = [
+        sys.executable,
+        "-X",
+        "utf8",
+        str(BASE_DIR / "pipeline_v2" / "runtime_check.py"),
+        "--profile",
+        profile,
+    ]
+    return _run_subprocess(cmd)
+
+
+def run_mykeibadb_daily_sync(timeout_seconds: int = 900) -> int:
+    """WSL PostgreSQL 接続先を更新してから mykeibadb を同期する。"""
+    print("mykeibadb 日次同期を実行します", flush=True)
+    cmd = [
+        sys.executable,
+        "-X",
+        "utf8",
+        str(BASE_DIR / "tools" / "mykeibadb_sync.py"),
+        "--timeout",
+        str(timeout_seconds),
+    ]
+    return _run_subprocess(cmd)
+
+
+def run_integrity_check() -> int:
+    """成果物の不変条件（リーク・RAG重複など）を確認する。"""
+    print("うまなり地蔵AI integrity check を実行します", flush=True)
+    cmd = [
+        sys.executable,
+        "-X",
+        "utf8",
+        str(BASE_DIR / "tools" / "verify_integrity.py"),
+    ]
+    return _run_subprocess(cmd)
+
+
+def run_source_sanity() -> int:
+    """構文・空白・固定ローカルパスの軽量チェックを実行する。"""
+    print("うまなり地蔵AI source sanity check を実行します", flush=True)
+    cmd = [
+        sys.executable,
+        "-X",
+        "utf8",
+        str(BASE_DIR / "tools" / "source_sanity.py"),
+    ]
+    return _run_subprocess(cmd)
+
+
+def run_doctor(skip_canary: bool = False, strict_external: bool = False) -> int:
+    """外部依存・source sanity・runtime・integrity・preflight・canary をまとめて診断する。"""
+    print("うまなり地蔵AI doctor を実行します", flush=True)
+    cmd = [
+        sys.executable,
+        "-X",
+        "utf8",
+        str(BASE_DIR / "tools" / "doctor.py"),
+    ]
+    if skip_canary:
+        cmd.append("--skip-canary")
+    if strict_external:
+        cmd.append("--strict-external")
+    return _run_subprocess(cmd)
+
+
+def run_v2_daily(trace_id: str = "", preflight: bool = True, preflight_only: bool = False) -> int:
     """pipeline_v2/00_orchestrator.py（日次 DAG）を呼び出す"""
-    import subprocess, sys as _sys
-    cmd = [_sys.executable, "-X", "utf8",
-           os.path.join(BASE_DIR, "pipeline_v2", "00_orchestrator.py")]
+    if preflight:
+        rc = run_v2_preflight(weekly=False)
+        if rc != 0 or preflight_only:
+            if rc != 0:
+                print("pipeline_v2 日次 preflight で要確認項目があります。必要なら --skip-preflight で続行してください。")
+            return rc
+    cmd = [sys.executable, "-X", "utf8",
+           str(BASE_DIR / "pipeline_v2" / "00_orchestrator.py")]
     if trace_id:
         cmd += ["--trace_id", trace_id]
-    return subprocess.run(cmd, cwd=BASE_DIR).returncode
+    return _run_subprocess(cmd)
 
 
-def run_v2_weekly(trace_id: str = "") -> int:
+def run_v2_weekly(trace_id: str = "", preflight: bool = True, preflight_only: bool = False) -> int:
     """pipeline_v2/00_orchestrator_weekly.py（週次 DAG）を呼び出す"""
-    import subprocess, sys as _sys
-    cmd = [_sys.executable, "-X", "utf8",
-           os.path.join(BASE_DIR, "pipeline_v2", "00_orchestrator_weekly.py")]
+    if preflight:
+        rc = run_v2_preflight(weekly=True)
+        if rc != 0 or preflight_only:
+            if rc != 0:
+                print("pipeline_v2 週次 preflight で要確認項目があります。必要なら --skip-preflight で続行してください。")
+            return rc
+    cmd = [sys.executable, "-X", "utf8",
+           str(BASE_DIR / "pipeline_v2" / "00_orchestrator_weekly.py")]
     if trace_id:
         cmd += ["--trace_id", trace_id]
-    return subprocess.run(cmd, cwd=BASE_DIR).returncode
+    return _run_subprocess(cmd)
 
 
 if __name__ == "__main__":
@@ -563,13 +659,29 @@ if __name__ == "__main__":
 
 例:
   python run_all.py --v2                  # pipeline_v2 日次 DAG（推奨）
+  python run_all.py --v2 --sync-mykeibadb # mykeibadb同期→pipeline_v2 日次 DAG
   python run_all.py --v2-weekly           # pipeline_v2 週次 DAG（推奨）
+  python run_all.py --v2 --preflight-only # pipeline_v2 日次の事前診断だけ実行
+  python run_all.py --runtime-check       # 本実行に必要な依存・ファイルを確認
+  python run_all.py --integrity-check     # リーク・RAG重複・モデル成果物を確認
+  python run_all.py --source-sanity       # 構文・空白・固定ローカルパスを確認
+  python run_all.py --doctor              # 総合診断を実行
   python run_all.py --morning             # 朝の予想のみ
   python run_all.py --results             # レース終了後に結果を記録
   python run_all.py --skip-fetch --skip-train  # 予想のみ再実行
 """)
     parser.add_argument('--v2',          action='store_true', help='pipeline_v2 日次 DAG を実行（推奨）')
     parser.add_argument('--v2-weekly',   action='store_true', help='pipeline_v2 週次 DAG を実行（推奨）')
+    parser.add_argument('--sync-mykeibadb', action='store_true', help='pipeline_v2 実行前に mykeibadb を同期')
+    parser.add_argument('--sync-timeout', type=int, default=900, help='mykeibadb 同期待機秒数')
+    parser.add_argument('--skip-preflight', action='store_true', help='pipeline_v2 実行前の preflight を省略')
+    parser.add_argument('--preflight-only', action='store_true', help='pipeline_v2 の preflight のみ実行して終了')
+    parser.add_argument('--runtime-check', action='store_true', help='pipeline_v2 本実行向けの依存・ファイル診断のみ実行')
+    parser.add_argument('--integrity-check', action='store_true', help='リーク・RAG重複・モデル成果物の整合性チェックのみ実行')
+    parser.add_argument('--source-sanity', action='store_true', help='構文・空白・固定ローカルパスの軽量チェックのみ実行')
+    parser.add_argument('--doctor',      action='store_true', help='外部依存・source sanity・runtime・integrity・preflight・canary の総合診断を実行')
+    parser.add_argument('--doctor-skip-canary', action='store_true', help='--doctor 実行時に canary_run.py を省略')
+    parser.add_argument('--doctor-strict-external', action='store_true', help='--doctor 実行時に外部依存 WARN も失敗扱いにする')
     parser.add_argument('--skip-fetch',  action='store_true', help='データ取得をスキップ')
     parser.add_argument('--skip-train',  action='store_true', help='モデル学習をスキップ')
     parser.add_argument('--skip-adv',    action='store_true', help='高度特徴量をスキップ')
@@ -587,15 +699,41 @@ if __name__ == "__main__":
                         help='夕方モード（--results の別名）')
     args = parser.parse_args()
 
-    if args.v2:
+    if args.runtime_check:
+        profile = "weekly" if getattr(args, 'v2_weekly', False) else ("daily" if args.v2 else "all")
+        raise SystemExit(run_v2_runtime_check(profile))
+    if args.integrity_check:
+        raise SystemExit(run_integrity_check())
+    if args.source_sanity:
+        raise SystemExit(run_source_sanity())
+    if args.doctor:
+        raise SystemExit(run_doctor(
+            skip_canary=args.doctor_skip_canary,
+            strict_external=args.doctor_strict_external,
+        ))
+    if getattr(args, 'v2_weekly', False):
         import uuid
-        print("pipeline_v2 日次 DAG を実行します")
-        rc = run_v2_daily(trace_id=uuid.uuid4().hex)
+        if not args.preflight_only:
+            print("pipeline_v2 週次 DAG を実行します")
+        rc = run_v2_weekly(
+            trace_id=uuid.uuid4().hex,
+            preflight=(not args.skip_preflight) or args.preflight_only,
+            preflight_only=args.preflight_only,
+        )
         raise SystemExit(rc)
-    elif getattr(args, 'v2_weekly', False):
+    elif args.v2 or args.preflight_only:
         import uuid
-        print("pipeline_v2 週次 DAG を実行します")
-        rc = run_v2_weekly(trace_id=uuid.uuid4().hex)
+        if not args.preflight_only:
+            print("pipeline_v2 日次 DAG を実行します")
+        if args.sync_mykeibadb and not args.preflight_only:
+            sync_rc = run_mykeibadb_daily_sync(timeout_seconds=args.sync_timeout)
+            if sync_rc != 0:
+                raise SystemExit(sync_rc)
+        rc = run_v2_daily(
+            trace_id=uuid.uuid4().hex,
+            preflight=(not args.skip_preflight) or args.preflight_only,
+            preflight_only=args.preflight_only,
+        )
         raise SystemExit(rc)
     elif args.results or args.evening:
         # 夕方の結果取得モード: 予想・学習はスキップして結果だけ取得

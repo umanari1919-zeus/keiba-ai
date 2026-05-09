@@ -10,8 +10,11 @@ import json, os
 import pickle
 from datetime import datetime
 from typing import Dict, Optional, Tuple
+from pipeline.config import BASE_DIR, CSV_FEATURES, DATA_DIR
+from pipeline.native_runtime import ensure_native_runtime
 
-BASE_DIR = "D:\\keiba_ai"
+ensure_native_runtime()
+
 MODEL_PATH = os.path.join(BASE_DIR, "model_v8.pkl")
 
 # 係数クリップ（安全範囲）
@@ -190,10 +193,10 @@ def load_coeff_table(year: int = None) -> Dict[str, float]:
         return _COEFF_TABLE
 
     year = year or datetime.now().year
-    path = f"{BASE_DIR}\\data\\condition_coeffs_{year}.json"
+    path = os.path.join(DATA_DIR, f"condition_coeffs_{year}.json")
     if not os.path.exists(path):
         # 前年のファイルも試みる
-        path = f"{BASE_DIR}\\data\\condition_coeffs_{year-1}.json"
+        path = os.path.join(DATA_DIR, f"condition_coeffs_{year-1}.json")
 
     if os.path.exists(path):
         with open(path, encoding='utf-8') as f:
@@ -252,7 +255,7 @@ def run_condition_adjuster(year: int = None) -> dict:
     print("⚙️ 条件別ベット係数自動調整")
     print("="*55)
 
-    feat_path = f"{BASE_DIR}\\keiba_data_features.csv"
+    feat_path = CSV_FEATURES
     if not os.path.exists(feat_path):
         print("  ⚠️ 特徴量ファイルなし")
         return {}
@@ -269,8 +272,8 @@ def run_condition_adjuster(year: int = None) -> dict:
         print("  ⚠️ win_probability なし → モデル学習後に再実行してください")
         # ダミーの係数テーブルを保存（全条件=1.0）
         dummy = {}
-        path = f"{BASE_DIR}\\data\\condition_coeffs_{year}.json"
-        os.makedirs(f"{BASE_DIR}\\data", exist_ok=True)
+        path = os.path.join(DATA_DIR, f"condition_coeffs_{year}.json")
+        os.makedirs(DATA_DIR, exist_ok=True)
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(dummy, f, ensure_ascii=False, indent=2)
         return {}
@@ -282,12 +285,12 @@ def run_condition_adjuster(year: int = None) -> dict:
         for _, row in roi_table.iterrows()
     }
 
-    os.makedirs(f"{BASE_DIR}\\data", exist_ok=True)
-    coeff_path = f"{BASE_DIR}\\data\\condition_coeffs_{year}.json"
+    os.makedirs(DATA_DIR, exist_ok=True)
+    coeff_path = os.path.join(DATA_DIR, f"condition_coeffs_{year}.json")
     with open(coeff_path, 'w', encoding='utf-8') as f:
         json.dump(coeff_dict, f, ensure_ascii=False, indent=2)
 
-    roi_csv = f"{BASE_DIR}\\data\\condition_roi_{year}.csv"
+    roi_csv = os.path.join(DATA_DIR, f"condition_roi_{year}.csv")
     roi_table.to_csv(roi_csv, index=False, encoding='utf-8-sig')
 
     # 結果表示

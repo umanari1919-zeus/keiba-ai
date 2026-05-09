@@ -1,14 +1,31 @@
-import pandas as pd
-import numpy as np
 import pickle
 import os
+import argparse
+import sys
+import pathlib
 from datetime import datetime
-from pipeline.ensemble_utils import load_ensemble_weights
 
-BASE_DIR  = "D:\\keiba_ai"
-DATA_DIR  = os.path.join(BASE_DIR, "data")
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from pipeline.config import BASE_DIR, DATA_DIR, CSV_FEATURES
+from pipeline.native_runtime import ensure_native_runtime
+
+ensure_native_runtime()
+
+try:
+    from pipeline.ensemble_utils import load_ensemble_weights
+except ImportError:
+    load_ensemble_weights = None
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
 MODEL_PATH = os.path.join(BASE_DIR, "model_v8.pkl")
-FEAT_FILE  = os.path.join(BASE_DIR, "keiba_data_features.csv")
+FEAT_FILE  = CSV_FEATURES
 
 # tansho_odds は x10 格納（150 = 15.0倍）
 # MIN_ODDS=10.0倍 → tansho_odds >= 100
@@ -48,12 +65,34 @@ def _load_model():
         raise RuntimeError(f"モデル読み込みエラー: {e}") from e
 
 
+def _check_runtime(date_str: str | None = None) -> list[str]:
+    issues = []
+    if pd is None:
+        issues.append("pandas が未インストールです")
+    if load_ensemble_weights is None:
+        issues.append("numpy など推論依存が不足しています")
+    if not os.path.exists(MODEL_PATH):
+        issues.append(f"モデルファイルなし: {MODEL_PATH}")
+    if not os.path.exists(FEAT_FILE):
+        issues.append(f"特徴量CSVなし: {FEAT_FILE}")
+    if date_str is None:
+        date_str = datetime.now().strftime("%Y%m%d")
+    today_file = os.path.join(DATA_DIR, f"today_entries_{date_str}.csv")
+    if not os.path.exists(today_file):
+        issues.append(f"当日出馬表なし: {today_file}")
+    return issues
+
+
 def predict_today(date_str: str = None) -> list:
     """
     当日出馬表 today_entries_YYYYMMDD.csv を使ってリアル予測を行う。
     kakutei_chakujun（確定着順）不要。
     Returns: 予測結果のリスト（race_code, bamei, pred_chakujun, win_prob, odds）
     """
+    if pd is None:
+        print("[predict_04] pandas が未インストールのため予測を実行できません")
+        return []
+
     if date_str is None:
         date_str = datetime.now().strftime("%Y%m%d")
 
@@ -64,6 +103,9 @@ def predict_today(date_str: str = None) -> list:
         return []
 
     saved    = _load_model()
+    if load_ensemble_weights is None:
+        print("[predict_04] numpy など推論依存が未導入のため予測を実行できません")
+        return []
     lgb_model = saved["lgb_model"]
     xgb_model = saved["xgb_model"]
     cb_model  = saved["cb_model"]
@@ -153,6 +195,11 @@ def predict_today(date_str: str = None) -> list:
     return results
 
 def simulate_recovery(year):
+    if pd is None:
+        raise RuntimeError("pandas が未インストールのため simulate_recovery を実行できません")
+    if load_ensemble_weights is None:
+        raise RuntimeError("numpy など推論依存が未導入のため simulate_recovery を実行できません")
+
     # ── モデル読み込み（共通関数を使用） ──────────────────────
     saved = _load_model()
 
@@ -247,3 +294,41 @@ def simulate_recovery(year):
         'recovery_rate': recovery_rate,
         'profit': total_return - total_bet
     }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="当日予測 / 回収率シミュレーション")
+    parser.add_argument("--date", default=None, help="対象日 YYYYMMDD")
+    parser.add_argument("--year", type=int, default=None, help="simulate_recovery の対象年")
+    parser.add_argument("--dry-run", action="store_true", help="依存関係と入力ファイルだけ確認する")
+    parser.add_argument("--simulate-recovery", action="store_true", help="年次回収率シミュレーションを実行")
+    args, _ = parser.parse_known_args()
+
+    if args.dry_run:
+        issues = _check_runtime(args.date)
+        if issues:
+            print("[predict_04] dry-run: 要確認")
+            for issue in issues:
+                print(f"  - {issue}")
+        else:
+            print("[predict_04] dry-run: 実行要件は概ね満たしています")
+        return 0
+
+    if args.simulate_recovery:
+        year = args.year or datetime.now().year
+        result = simulate_recovery(year)
+        if result is None:
+            print(f"[predict_04] {year}年データがありません")
+            return 1
+        print(result)
+        return 0
+
+    result = predict_today(args.date)
+    if len(result) > 0:
+        print("\n✅ 当日予測が完了しました")
+        return 0
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

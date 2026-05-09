@@ -19,13 +19,20 @@ import logging
 import pathlib
 import sys
 import time
+import importlib
 from datetime import datetime, timezone
 
 # ─── パス設定 ──────────────────────────────────────────────────────
-BASE_DIR  = pathlib.Path("D:/keiba_ai")
-WORKTREE  = pathlib.Path(__file__).parent
-sys.path.insert(0, str(WORKTREE))
-sys.path.insert(0, str(BASE_DIR))
+WORKTREE = pathlib.Path(__file__).resolve().parent
+PROJECT_ROOT = WORKTREE
+PIPELINE_V2_DIR = PROJECT_ROOT / "pipeline_v2"
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from pipeline.config import BASE_DIR as CONFIG_BASE_DIR
+
+BASE_DIR = pathlib.Path(CONFIG_BASE_DIR)
 
 # ─── ログ設定 ──────────────────────────────────────────────────────
 LOG_DIR = WORKTREE / "logs"
@@ -203,9 +210,9 @@ def run_canary(dry_run: bool = True, schema_only: bool = False) -> CanaryResult:
     # STEP 4.6: UpsetScore dry-run
     # ─────────────────────────────────────────────
     try:
-        sys.path.insert(0, str(BASE_DIR / "pipeline_v2"))
-        from importlib import import_module
-        us_mod = import_module("08_upsetscore")
+        if str(PIPELINE_V2_DIR) not in sys.path:
+            sys.path.insert(0, str(PIPELINE_V2_DIR))
+        us_mod = importlib.import_module("08_upsetscore")
         result_us = us_mod.run_upsetscore(dry_run=True)
         races = result_us.get("races_computed", 0)
         res.record("upsetscore.run_upsetscore(dry-run)", True,

@@ -15,18 +15,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-import pathlib
 from datetime import datetime, timezone
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
 from .audit_logger import sha256_of
 from .market_agent import MarketAgent
+from .path_config import BASE_DIR, DATA_DIR
 
 log = logging.getLogger(__name__)
-
-BASE_DIR = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-DATA_DIR = BASE_DIR / "data"
 
 # マニフェスト定数
 KELLY_FRACTION_MULTIPLIER = 0.25

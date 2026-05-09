@@ -4,8 +4,11 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Continue"
 
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$toolsDir = Join-Path $projectRoot "tools"
+
 # ログファイル設定
-$logFile = "D:\keiba_ai\tools\logs\opencode-automation-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
+$logFile = Join-Path $toolsDir "logs\opencode-automation-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
 New-Item -ItemType Directory -Path (Split-Path $logFile) -Force | Out-Null
 
 function Log {
@@ -47,11 +50,13 @@ Write-Host ""
 # ============================================================================
 LogSection "STEP 2: PATH Configuration"
 
-$npmPath = "C:\Users\uchih\AppData\Roaming\npm"
-if ($env:Path -notlike "*npm*") {
+$npmPath = if ($env:APPDATA) { Join-Path $env:APPDATA "npm" } else { "" }
+if ($npmPath -and (Test-Path $npmPath) -and $env:Path -notlike "*$npmPath*") {
     Log "⏳ Adding npm path to session..." "INFO"
     $env:Path += ";$npmPath"
     Log "✅ PATH configured" "OK"
+} elseif (-not $npmPath -or -not (Test-Path $npmPath)) {
+    Log "⚠️  npm path not found; continuing with current PATH" "WARN"
 } else {
     Log "✅ npm path already in PATH" "OK"
 }
@@ -63,7 +68,7 @@ Write-Host ""
 # ============================================================================
 LogSection "STEP 3: Environment Variables"
 
-$envFile = "D:\keiba_ai\.env"
+$envFile = Join-Path $projectRoot ".env"
 if (Test-Path $envFile) {
     Log "✅ .env file exists" "OK"
     $hasApiKey = Select-String -Path $envFile -Pattern "ANTHROPIC_API_KEY" -ErrorAction SilentlyContinue
@@ -84,11 +89,11 @@ Write-Host ""
 LogSection "STEP 4: Directory Setup"
 
 $dirs = @(
-    "D:\keiba_ai\generated",
-    "D:\keiba_ai\.opencode\logs",
-    "D:\keiba_ai\.opencode\cache",
-    "D:\keiba_ai\tests",
-    "D:\keiba_ai\docs"
+    (Join-Path $projectRoot "generated"),
+    (Join-Path $projectRoot ".opencode\logs"),
+    (Join-Path $projectRoot ".opencode\cache"),
+    (Join-Path $projectRoot "tests"),
+    (Join-Path $projectRoot "docs")
 )
 
 foreach ($dir in $dirs) {
@@ -110,7 +115,7 @@ LogSection "STEP 5: Sample Agent Generation"
 Log "⏳ Generating sample agent 'test_analyzer'..." "INFO"
 
 try {
-    Push-Location "D:\keiba_ai"
+    Push-Location $projectRoot
 
     $output = opencode generate --type agent --name "test_analyzer" --description "テスト分析エージェント" 2>&1
 
@@ -136,7 +141,7 @@ LogSection "STEP 6: Code Optimization"
 Log "⏳ Optimizing generated agent..." "INFO"
 
 try {
-    Push-Location "D:\keiba_ai"
+    Push-Location $projectRoot
 
     opencode optimize --input "agents\test_analyzer_agent.py" --strategy "readability" 2>&1 | Out-Null
 
@@ -157,7 +162,7 @@ LogSection "STEP 7: Test Generation"
 Log "⏳ Generating test file..." "INFO"
 
 try {
-    Push-Location "D:\keiba_ai"
+    Push-Location $projectRoot
 
     opencode generate --type tests --input "agents\test_analyzer_agent.py" --framework pytest 2>&1 | Out-Null
 
@@ -178,7 +183,7 @@ LogSection "STEP 8: Documentation Generation"
 Log "⏳ Generating documentation..." "INFO"
 
 try {
-    Push-Location "D:\keiba_ai"
+    Push-Location $projectRoot
 
     opencode generate --type documentation --input "agents\test_analyzer_agent.py" --format markdown 2>&1 | Out-Null
 
@@ -199,7 +204,7 @@ LogSection "STEP 9: Wrapper Functions Test"
 Log "⏳ Loading wrapper functions..." "INFO"
 
 try {
-    . "D:\keiba_ai\tools\opencode-wrapper.ps1" 2>$null
+    . (Join-Path $toolsDir "opencode-wrapper.ps1") 2>$null
     Log "✅ Wrapper functions loaded successfully" "OK"
 
     # 関数が存在するか確認
@@ -274,7 +279,7 @@ $generatedFiles = @(
 )
 
 foreach ($file in $generatedFiles) {
-    $fullPath = "D:\keiba_ai\$file"
+    $fullPath = Join-Path $projectRoot $file
     if (Test-Path $fullPath) {
         $size = (Get-Item $fullPath).Length
         Log "✅ $file ($size bytes)" "OK"

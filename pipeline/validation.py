@@ -1,5 +1,10 @@
 import pandas as pd
 import numpy as np
+from pipeline.native_runtime import ensure_native_runtime
+from pipeline.config import CSV_FEATURES
+
+ensure_native_runtime()
+
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelEncoder
 import lightgbm as lgb
@@ -14,9 +19,9 @@ FEATURES = [
     'kyori', 'track_code', 'tenko_code',
     'shiba_babajotai_code', 'dirt_babajotai_code', 'shusso_tosu',
     'wakuban', 'umaban', 'kaisai_kai', 'kaisai_nichime',
-    'past3_avg_chakujun', 'past3_avg_odds',
+    'past3_avg_chakujun',
     'total_races', 'win_count', 'win_rate',
-    'prev_chakujun', 'prev_odds',
+    'prev_chakujun',
     'weeks_since_last_race', 'futan_henka',
     'kishu_win_rate', 'chokyoshi_win_rate', 'kishu_keibajo_win_rate',
     'chichi_code', 'haha_code', 'chichi_chichi_code',
@@ -81,7 +86,7 @@ def walk_forward_validation():
     print("⚠️ オッズ・人気除外の真のモデルで検証")
     print("="*50)
     
-    df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df = pd.read_csv(CSV_FEATURES,
                      encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     df = df.fillna(0)
     

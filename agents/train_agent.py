@@ -15,8 +15,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
-import pathlib
 import pickle
 import subprocess
 import sys
@@ -24,12 +22,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
+from .path_config import BASE_DIR
+from pipeline.config import DB_URL
+from pipeline.native_runtime import ensure_native_runtime
 
 log = logging.getLogger(__name__)
 
-BASE_DIR  = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
 MODEL_PKL = BASE_DIR / "model_v8.pkl"
-DB_URL    = os.getenv("KEIBA_DB_URL", "postgresql://postgres:trust@localhost:5433/mykeibadb")
 
 MODEL_NAME    = "LGB+XGB+CatBoost Ensemble"
 MODEL_VERSION = "v8"
@@ -122,6 +121,7 @@ class TrainAgent(BaseAgent):
             log.warning("model_v8.pkl が見つかりません。空メトリクスを返します。")
             return {}
         try:
+            ensure_native_runtime()
             with open(MODEL_PKL, "rb") as f:
                 model_data = pickle.load(f)
             return model_data.get("metrics", {})

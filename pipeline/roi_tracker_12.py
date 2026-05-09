@@ -7,7 +7,9 @@ import numpy as np
 import os
 from datetime import datetime, timedelta
 
-TRACKER_FILE = "D:\\keiba_ai\\data\\roi_tracker.csv"
+from pipeline.config import DATA_DIR
+
+TRACKER_FILE = os.path.join(DATA_DIR, "roi_tracker.csv")
 TARGET_ROI = 1.15       # 目標回収率 115%
 ALERT_ROI_WARN = 0.90   # 警告ライン 90%
 ALERT_ROI_CRIT = 0.75   # 危機ライン 75%

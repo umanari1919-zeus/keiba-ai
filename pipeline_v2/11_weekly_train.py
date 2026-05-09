@@ -18,11 +18,11 @@ import sys
 import uuid
 from datetime import datetime
 
-_BASE_DIR = pathlib.Path(r"D:\keiba_ai")
-# BASE_DIR を必ず先頭に (worktree より優先)
-if str(_BASE_DIR) in sys.path:
-    sys.path.remove(str(_BASE_DIR))
-sys.path.insert(0, str(_BASE_DIR))
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+# プロジェクトルートを必ず先頭に (worktree より優先)
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 BASE    = pathlib.Path(__file__).parent
 LOG_DIR = BASE / "logs"
@@ -40,7 +40,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-def main(trace_id: str = "", run_tag: str = "", skip_train: bool = False) -> int:
+def main(trace_id: str = "", run_tag: str = "", dry_run: bool = False, skip_train: bool = False) -> int:
     trace_id = trace_id or str(uuid.uuid4())
     run_tag  = run_tag  or f"run_{today}_{uuid.uuid4().hex[:8]}"
     log.info("=== weekly_train ステージ開始 trace=%s ===", trace_id)
@@ -53,7 +53,7 @@ def main(trace_id: str = "", run_tag: str = "", skip_train: bool = False) -> int
         return 1
 
     meta   = AgentMeta(trace_id=trace_id, run_tag=run_tag)
-    result = TrainAgent(dry_run=False).execute(meta, {"skip_train": skip_train})
+    result = TrainAgent(dry_run=dry_run).execute(meta, {"skip_train": skip_train})
 
     if result.ok:
         out = result.output
@@ -71,8 +71,9 @@ def main(trace_id: str = "", run_tag: str = "", skip_train: bool = False) -> int
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="週次モデル再学習")
+    parser.add_argument("--dry-run", action="store_true", help="学習を実行せず dry-run として確認する")
     parser.add_argument("--skip-train", action="store_true", help="学習をスキップして pkl のみ読み込む（テスト用）")
     parser.add_argument("--trace_id",   default="")
     parser.add_argument("--run_tag",    default="")
     args = parser.parse_args()
-    sys.exit(main(args.trace_id, args.run_tag, args.skip_train))
+    sys.exit(main(args.trace_id, args.run_tag, args.dry_run, args.skip_train))

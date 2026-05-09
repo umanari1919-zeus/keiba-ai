@@ -8,7 +8,8 @@ agents.AutoLearnAgent を呼び出し、直近のパフォーマンス履歴か�
 実行方法:
   python pipeline_v2/19_auto_learn.py
   python pipeline_v2/19_auto_learn.py --dry-run
-  python pipeline_v2/19_auto_learn.py --force     # 強制再学習
+  python pipeline_v2/19_auto_learn.py --force     # 再学習判定のみ（実更新なし）
+  python pipeline_v2/19_auto_learn.py --force --live  # 実再学習を許可
 """
 
 from __future__ import annotations
@@ -20,11 +21,11 @@ import sys
 import uuid
 from datetime import datetime
 
-_BASE_DIR = pathlib.Path(r"D:\keiba_ai")
-# BASE_DIR を必ず先頭に (worktree より優先)
-if str(_BASE_DIR) in sys.path:
-    sys.path.remove(str(_BASE_DIR))
-sys.path.insert(0, str(_BASE_DIR))
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+# プロジェクトルートを必ず先頭に (worktree より優先)
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 BASE    = pathlib.Path(__file__).parent
 LOG_DIR = BASE / "logs"
@@ -47,10 +48,11 @@ def main(
     run_tag: str = "",
     dry_run: bool = False,
     force: bool = False,
+    live: bool = False,
 ) -> int:
     trace_id = trace_id or str(uuid.uuid4())
     run_tag  = run_tag  or f"run_{today}_{uuid.uuid4().hex[:8]}"
-    log.info("=== auto_learn ステージ開始 trace=%s force=%s ===", trace_id, force)
+    log.info("=== auto_learn ステージ開始 trace=%s force=%s live=%s ===", trace_id, force, live)
 
     try:
         from agents.auto_learn_agent import AutoLearnAgent
@@ -60,7 +62,7 @@ def main(
         return 1
 
     meta   = AgentMeta(trace_id=trace_id, run_tag=run_tag)
-    result = AutoLearnAgent(dry_run=dry_run).execute(meta, {"force": force})
+    result = AutoLearnAgent(dry_run=dry_run).execute(meta, {"force": force, "live": live})
 
     if result.ok:
         out = result.output
@@ -82,7 +84,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run",  action="store_true")
     parser.add_argument("--force",    action="store_true", help="強制再学習")
+    parser.add_argument("--live",     action="store_true", help="実再学習を許可（デフォルトは判定のみ）")
     parser.add_argument("--trace_id", default="")
     parser.add_argument("--run_tag",  default="")
     args = parser.parse_args()
-    sys.exit(main(args.trace_id, args.run_tag, args.dry_run, args.force))
+    sys.exit(main(args.trace_id, args.run_tag, args.dry_run, args.force, args.live))

@@ -13,7 +13,7 @@
       "script": "pipeline_v2/10_rag_index.py",
       "description": "RAGStore インデックス再構築",
       "depends_on": ["weekly_train"],
-      "args": ["--limit", "50000"]
+      "args": ["--limit", "50000", "--rebuild"]
     },
     {
       "id": "upsetscore",
@@ -22,10 +22,22 @@
       "depends_on": ["weekly_train"]
     },
     {
+      "id": "backtest_engine",
+      "script": "pipeline_v2/21_backtest_engine.py",
+      "description": "EV×Kelly グリッドサーチで運用閾値を点検",
+      "depends_on": ["weekly_train"]
+    },
+    {
+      "id": "statistics",
+      "script": "pipeline_v2/22_statistics.py",
+      "description": "統計分析・PCA・クラスタリング・リスク解析",
+      "depends_on": ["weekly_train"]
+    },
+    {
       "id": "knowledge_update",
       "script": "pipeline_v2/12_knowledge_update.py",
       "description": "知識ベース更新（KnowledgeAgent, days=7）",
-      "depends_on": ["rag_rebuild", "upsetscore"],
+      "depends_on": ["rag_rebuild", "upsetscore", "backtest_engine", "statistics"],
       "args": ["--days", "7"]
     },
     {

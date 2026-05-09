@@ -1,10 +1,31 @@
+from __future__ import annotations
+
 import json
-import pandas as pd
-import numpy as np
 import pickle
 import os
+import argparse
+import sys
+import pathlib
 from datetime import datetime
-from pipeline.ensemble_utils import load_ensemble_weights
+
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from pipeline.config import BASE_DIR, DATA_DIR, CSV_FEATURES
+from pipeline.native_runtime import ensure_native_runtime
+
+ensure_native_runtime()
+
+try:
+    from pipeline.ensemble_utils import load_ensemble_weights
+except ImportError:
+    load_ensemble_weights = None
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 
 EV_THRESHOLD = 0.15
 MIN_ODDS     = 10.0
@@ -17,10 +38,9 @@ EV_THRESHOLDS_BY_TYPE = {
     "default": EV_THRESHOLD,
 }
 
-BASE_DIR   = "D:\\keiba_ai"
 MODEL_PATH = os.path.join(BASE_DIR, "model_v8.pkl")
-FEAT_FILE  = os.path.join(BASE_DIR, "keiba_data_features.csv")
-KB_DIR     = os.path.join(BASE_DIR, "data", "knowledge_base")
+FEAT_FILE  = CSV_FEATURES
+KB_DIR     = os.path.join(DATA_DIR, "knowledge_base")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -162,6 +182,12 @@ def filter_positive_ev(df, threshold=EV_THRESHOLD, min_odds=MIN_ODDS):
 
 def run_ev_analysis(year=2025, threshold=EV_THRESHOLD):
     print(f"[EV] {datetime.now()} 期待値計算エンジン起動...")
+    if pd is None:
+        print("[EV] pandas が未インストールのため期待値計算を実行できません")
+        return []
+    if load_ensemble_weights is None:
+        print("[EV] numpy など推論依存が未導入のため期待値計算を実行できません")
+        return []
 
     if not os.path.exists(MODEL_PATH):
         raise FileNotFoundError(
@@ -253,9 +279,37 @@ def run_ev_analysis(year=2025, threshold=EV_THRESHOLD):
     return positive_ev
 
 
+def check_runtime() -> list[str]:
+    issues = []
+    if pd is None:
+        issues.append("pandas が未インストールです")
+    if load_ensemble_weights is None:
+        issues.append("numpy など推論依存が不足しています")
+    if not os.path.exists(MODEL_PATH):
+        issues.append(f"モデルファイルなし: {MODEL_PATH}")
+    if not os.path.exists(FEAT_FILE):
+        issues.append(f"特徴量CSVなし: {FEAT_FILE}")
+    return issues
+
+
 if __name__ == "__main__":
-    result = run_ev_analysis(2025)
-    if len(result) > 0:
+    parser = argparse.ArgumentParser(description="期待値計算エンジン")
+    parser.add_argument("--year", type=int, default=2025)
+    parser.add_argument("--dry-run", action="store_true", help="依存関係と入力ファイルだけ確認する")
+    args, _ = parser.parse_known_args()
+
+    if args.dry_run:
+        issues = check_runtime()
+        if issues:
+            print("[EV] dry-run: 要確認")
+            for issue in issues:
+                print(f"  - {issue}")
+        else:
+            print("[EV] dry-run: 実行要件は概ね満たしています")
+        raise SystemExit(0)
+
+    result = run_ev_analysis(args.year)
+    if hasattr(result, "__len__") and len(result) > 0:
         print("\n『期待値TOP10』")
         cols = ['race_code', 'bamei', 'win_probability',
                 'odds_decimal', 'expected_value']

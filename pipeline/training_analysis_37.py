@@ -29,8 +29,17 @@ from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 import os
 
-BASE_DIR = "D:\\keiba_ai"
-DB_URL   = "postgresql://postgres:trust@localhost:5433/mykeibadb"
+from pipeline.config import CSV_FEATURES, DB_URL
+
+WOOD_COLUMNS = ['ketto_toroku_bango', 'date', 'tracen_kubun', 'course', 't4f', 'l4f', 't3f', 'l3f', 'l1f']
+HANRO_COLUMNS = ['ketto_toroku_bango', 'date', 'tracen_kubun', 't4f', 'l4f', 't3f', 'l3f', 'l1f']
+
+
+def _horse_count(df: pd.DataFrame) -> int:
+    if 'ketto_toroku_bango' not in df.columns:
+        return 0
+    return int(df['ketto_toroku_bango'].nunique())
+
 
 # タイム列の変換（整数文字列 → 秒）
 def _parse_time(val, scale=10.0) -> float:
@@ -72,7 +81,7 @@ def _load_wood(engine, days_back: int = 60) -> pd.DataFrame:
             df = pd.read_sql(q, conn, params={'cutoff': cutoff})
     except Exception as e:
         print(f"  ⚠️ woodchip取得エラー: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(columns=WOOD_COLUMNS)
 
     df['date']  = pd.to_datetime(df['chokyo_nengappi'], format='%Y%m%d', errors='coerce')
     df['t4f']   = df['t4f_raw'].apply(lambda x: _parse_time(x))
@@ -81,7 +90,7 @@ def _load_wood(engine, days_back: int = 60) -> pd.DataFrame:
     df['l3f']   = df['l3f_raw'].apply(lambda x: _parse_time(x, 10.0))
     df['l1f']   = df['l1f_raw'].apply(lambda x: _parse_time(x, 10.0))
     df['course'] = df['course'].astype(str)
-    return df[['ketto_toroku_bango','date','tracen_kubun','course','t4f','l4f','t3f','l3f','l1f']].dropna(subset=['t4f'])
+    return df[WOOD_COLUMNS].dropna(subset=['t4f'])
 
 
 def _load_hanro(engine, days_back: int = 60) -> pd.DataFrame:
@@ -107,7 +116,7 @@ def _load_hanro(engine, days_back: int = 60) -> pd.DataFrame:
             df = pd.read_sql(q, conn, params={'cutoff': cutoff})
     except Exception as e:
         print(f"  ⚠️ hanro取得エラー: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(columns=HANRO_COLUMNS)
 
     df['date'] = pd.to_datetime(df['chokyo_nengappi'], format='%Y%m%d', errors='coerce')
     df['t4f']  = df['t4f_raw'].apply(lambda x: _parse_time(x))
@@ -115,7 +124,7 @@ def _load_hanro(engine, days_back: int = 60) -> pd.DataFrame:
     df['t3f']  = df['t3f_raw'].apply(lambda x: _parse_time(x))
     df['l3f']  = df['l3f_raw'].apply(lambda x: _parse_time(x, 10.0))
     df['l1f']  = df['l1f_raw'].apply(lambda x: _parse_time(x, 10.0))
-    return df[['ketto_toroku_bango','date','tracen_kubun','t4f','l4f','t3f','l3f','l1f']].dropna(subset=['t4f'])
+    return df[HANRO_COLUMNS].dropna(subset=['t4f'])
 
 
 # ─────────────────────────────────────────────────────────────
@@ -249,11 +258,11 @@ def build_training_features_v2(ref_date: pd.Timestamp = None) -> pd.DataFrame:
     engine = create_engine(DB_URL)
     print("    📥 woodchip_chokyo 読み込み中...")
     wood_raw  = _load_wood(engine)
-    print(f"    → {len(wood_raw):,}セッション ({wood_raw['ketto_toroku_bango'].nunique():,}頭)")
+    print(f"    → {len(wood_raw):,}セッション ({_horse_count(wood_raw):,}頭)")
 
     print("    📥 hanro_chokyo 読み込み中...")
     hanro_raw = _load_hanro(engine)
-    print(f"    → {len(hanro_raw):,}セッション ({hanro_raw['ketto_toroku_bango'].nunique():,}頭)")
+    print(f"    → {len(hanro_raw):,}セッション ({_horse_count(hanro_raw):,}頭)")
 
     wood_feat  = _aggregate_sessions(wood_raw,  'wood',  ref_date)
     hanro_feat = _aggregate_sessions(hanro_raw, 'hanro', ref_date)
@@ -296,7 +305,7 @@ def run_training_analysis(save: bool = True) -> pd.DataFrame:
     print("🏋️ 強化版 調教タイム分析 v2")
     print("="*55)
 
-    feat_path = f"{BASE_DIR}\\keiba_data_features.csv"
+    feat_path = CSV_FEATURES
     if not os.path.exists(feat_path):
         print("  ⚠️ keiba_data_features.csv なし — feature_eng_02 を先に実行")
         return pd.DataFrame()

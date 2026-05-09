@@ -1,5 +1,7 @@
 import psycopg2
-conn = psycopg2.connect(host="127.0.0.1", port=5433, dbname="mykeibadb", user="postgres")
+from pipeline.config import DB_CONFIG
+
+conn = psycopg2.connect(**DB_CONFIG)
 cur = conn.cursor()
 
 cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='woodchip_chokyo' ORDER BY ordinal_position")

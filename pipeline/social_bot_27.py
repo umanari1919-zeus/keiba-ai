@@ -9,12 +9,33 @@ APIキーは .env ファイルに設定してください。
 import os
 import json
 import asyncio
+import argparse
+import pathlib
+import sys
 import pandas as pd
 from datetime import datetime
 
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from pipeline.config import BASE_DIR as CONFIG_BASE_DIR, DATA_DIR as CONFIG_DATA_DIR
+
+BASE_DIR = pathlib.Path(CONFIG_BASE_DIR)
+DATA_DIR = pathlib.Path(CONFIG_DATA_DIR)
+
+
+def _env_truthy(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _outbound_allowed(live: bool = False) -> bool:
+    return live or _env_truthy("KEIBA_SOCIAL_LIVE")
+
 # ─── .env 読み込み ─────────────────────────────
 def _load_env():
-    env_path = "D:\\keiba_ai\\.env"
+    env_path = BASE_DIR / ".env"
     if os.path.exists(env_path):
         with open(env_path, 'r', encoding='utf-8') as f:
             for line in f:
@@ -33,11 +54,14 @@ _load_env()
 def generate_post_text(max_chars=270) -> str:
     """prediction_results から投稿文を生成"""
     try:
-        picks_files = [f for f in os.listdir("D:\\keiba_ai")
-                       if f.startswith("agent_picks_") and f.endswith(".json")]
-        if picks_files:
-            latest = sorted(picks_files)[-1]
-            with open(f"D:\\keiba_ai\\{latest}", 'r', encoding='utf-8') as f:
+        roots = [DATA_DIR, BASE_DIR]
+        picks_paths = []
+        for root in roots:
+            if root.exists():
+                picks_paths.extend(root.glob("agent_picks_*.json"))
+        if picks_paths:
+            latest = sorted(picks_paths)[-1]
+            with open(latest, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             picks = data.get('approved_races', [])
         else:
@@ -68,11 +92,15 @@ def generate_post_text(max_chars=270) -> str:
 # X (Twitter) 自動投稿
 # ──────────────────────────────────────────────
 
-def post_to_x(text: str) -> bool:
+def post_to_x(text: str, *, live: bool = False) -> bool:
     """
     必要な環境変数:
     X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET, X_BEARER_TOKEN
     """
+    if not _outbound_allowed(live):
+        print("  ⏩ X DRY-RUN: 実送信は --live または KEIBA_SOCIAL_LIVE=1 が必要です")
+        return False
+
     try:
         import tweepy
         client = tweepy.Client(
@@ -95,11 +123,15 @@ def post_to_x(text: str) -> bool:
 # Discord Bot
 # ──────────────────────────────────────────────
 
-def post_to_discord(text: str) -> bool:
+def post_to_discord(text: str, *, live: bool = False) -> bool:
     """
     必要な環境変数: DISCORD_WEBHOOK_URL
     Discord の Webhook URL を使って投稿（Bot不要）
     """
+    if not _outbound_allowed(live):
+        print("  ⏩ Discord DRY-RUN: 実送信は --live または KEIBA_SOCIAL_LIVE=1 が必要です")
+        return False
+
     try:
         import urllib.request
         import urllib.parse
@@ -126,10 +158,14 @@ def post_to_discord(text: str) -> bool:
 # Telegram Bot
 # ──────────────────────────────────────────────
 
-def post_to_telegram(text: str) -> bool:
+def post_to_telegram(text: str, *, live: bool = False) -> bool:
     """
     必要な環境変数: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
     """
+    if not _outbound_allowed(live):
+        print("  ⏩ Telegram DRY-RUN: 実送信は --live または KEIBA_SOCIAL_LIVE=1 が必要です")
+        return False
+
     try:
         import telegram
         bot = telegram.Bot(token=os.environ.get('TELEGRAM_BOT_TOKEN', ''))
@@ -157,10 +193,14 @@ def post_to_telegram(text: str) -> bool:
 # LINE Bot (Messaging API)
 # ──────────────────────────────────────────────
 
-def post_to_line(text: str) -> bool:
+def post_to_line(text: str, *, live: bool = False) -> bool:
     """
     必要な環境変数: LINE_CHANNEL_ACCESS_TOKEN, LINE_USER_ID
     """
+    if not _outbound_allowed(live):
+        print("  ⏩ LINE DRY-RUN: 実送信は --live または KEIBA_SOCIAL_LIVE=1 が必要です")
+        return False
+
     try:
         from linebot import LineBotApi
         from linebot.models import TextSendMessage
@@ -179,11 +219,7 @@ def post_to_line(text: str) -> bool:
     return False
 
 
-# ──────────────────────────────────────────────
-# 一括投稿
-# ──────────────────────────────────────────────
-
-def broadcast_picks(custom_text: str = None) -> dict:
+def broadcast_picks(custom_text: str | None = None, live: bool = False) -> dict:
     print("\n" + "="*55)
     print("📢 SNS一括配信")
     print("="*55)
@@ -198,27 +234,32 @@ def broadcast_picks(custom_text: str = None) -> dict:
         'discord':  False,
         'telegram': False,
         'line':     False,
+        'dry_run':  not (live or _env_truthy("KEIBA_SOCIAL_LIVE")),
         'sent_at':  datetime.now().isoformat()
     }
 
+    if results["dry_run"]:
+        print("  ⏩ DRY-RUN: 実送信は --live または KEIBA_SOCIAL_LIVE=1 が必要です")
+        return results
+
     # 各プラットフォームに投稿
     if os.environ.get('X_API_KEY'):
-        results['x'] = post_to_x(text)
+        results['x'] = post_to_x(text, live=live)
     else:
         print("  ⏩ X: X_API_KEY 未設定（スキップ）")
 
     if os.environ.get('DISCORD_WEBHOOK_URL'):
-        results['discord'] = post_to_discord(text)
+        results['discord'] = post_to_discord(text, live=live)
     else:
         print("  ⏩ Discord: DISCORD_WEBHOOK_URL 未設定（スキップ）")
 
     if os.environ.get('TELEGRAM_BOT_TOKEN'):
-        results['telegram'] = post_to_telegram(text)
+        results['telegram'] = post_to_telegram(text, live=live)
     else:
         print("  ⏩ Telegram: TELEGRAM_BOT_TOKEN 未設定（スキップ）")
 
     if os.environ.get('LINE_CHANNEL_ACCESS_TOKEN'):
-        results['line'] = post_to_line(text)
+        results['line'] = post_to_line(text, live=live)
     else:
         print("  ⏩ LINE: LINE_CHANNEL_ACCESS_TOKEN 未設定（スキップ）")
 
@@ -236,8 +277,8 @@ def broadcast_picks(custom_text: str = None) -> dict:
 # ──────────────────────────────────────────────
 
 def create_env_template():
-    template = """# うまなり地蔵AI 環境変数設定ファイル
-# このファイルを D:\\keiba_ai\\.env として保存してください
+    template = f"""# うまなり地蔵AI 環境変数設定ファイル
+# このファイルを {BASE_DIR / ".env"} として保存してください
 
 # X (Twitter) API
 X_API_KEY=
@@ -265,13 +306,36 @@ LINE_USER_ID=
 # Anthropic API（claude_comment_06.py用）
 ANTHROPIC_API_KEY=
 """
-    env_path = "D:\\keiba_ai\\.env.template"
+    env_path = BASE_DIR / ".env.template"
     with open(env_path, 'w', encoding='utf-8') as f:
         f.write(template)
     print(f"  📝 .env テンプレート生成: {env_path}")
     print("  → .env.template を .env にコピーして各APIキーを設定してください")
 
 
+def _load_draft_text(path: str) -> str:
+    draft_path = pathlib.Path(path)
+    data = json.loads(draft_path.read_text(encoding="utf-8"))
+    if isinstance(data, dict):
+        return str(data.get("text", ""))
+    return ""
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="うまなり地蔵AI SNS配信")
+    parser.add_argument("--draft_path", "--draft-path", default="", help="PublishAgent が生成したドラフトJSON")
+    parser.add_argument("--trace_id", default="")
+    parser.add_argument("--live", action="store_true", help="実送信を許可（デフォルトはdry-run）")
+    parser.add_argument("--create-env-template", action="store_true")
+    args = parser.parse_args(argv)
+
+    if args.create_env_template:
+        create_env_template()
+
+    text = _load_draft_text(args.draft_path) if args.draft_path else None
+    broadcast_picks(text, live=args.live)
+    return 0
+
+
 if __name__ == "__main__":
-    create_env_template()
-    broadcast_picks()
+    raise SystemExit(main())

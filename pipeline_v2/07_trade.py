@@ -14,6 +14,7 @@ paper_trading=True の間は実発注しない。
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import logging
 import pathlib
@@ -21,17 +22,20 @@ import sys
 import uuid
 from datetime import datetime
 
-_BASE_DIR = pathlib.Path(r"D:\keiba_ai")
-# BASE_DIR を必ず先頭に (worktree より優先)
-if str(_BASE_DIR) in sys.path:
-    sys.path.remove(str(_BASE_DIR))
-sys.path.insert(0, str(_BASE_DIR))
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+# プロジェクトルートを必ず先頭に (worktree より優先)
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
 
-BASE_DIR = pathlib.Path("D:/keiba_ai")
-DATA_DIR = BASE_DIR / "data"
+from pipeline.config import BASE_DIR as CONFIG_BASE_DIR, DATA_DIR as CONFIG_DATA_DIR
+
+BASE_DIR = pathlib.Path(CONFIG_BASE_DIR)
+DATA_DIR = pathlib.Path(CONFIG_DATA_DIR)
 BASE     = pathlib.Path(__file__).parent
 LOG_DIR  = BASE / "logs"
 LOG_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(exist_ok=True)
 
 today = datetime.now().strftime("%Y%m%d")
 logging.basicConfig(
@@ -45,6 +49,32 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _rows_to_predictions(rows: list[dict]) -> list:
+    preds = []
+    for row in rows:
+        tansho = _safe_float(row.get("tansho_odds", 100), 100.0)
+        odds_decimal = _safe_float(row.get("odds_decimal", 0.0), 0.0)
+        odds = odds_decimal or (tansho / 100 if tansho > 100 else tansho)
+        preds.append({
+            "race_id":               str(row.get("race_code", row.get("race_id", ""))),
+            "entry_id":              str(row.get("umaban", row.get("entry_id", ""))),
+            "win_prob":              _safe_float(row.get("win_probability", 0)),
+            "place_prob":            _safe_float(row.get("place_probability", 0)),
+            "expected_return":       _safe_float(row.get("expected_value", row.get("ev", 0))),
+            "uncertainty":           _safe_float(row.get("uncertainty", 0.30), 0.30),
+            "odds":                  odds,
+            "model_agreement_count": int(_safe_float(row.get("model_agreement_count", 2), 2)),
+        })
+    return preds
+
+
 def _load_predictions() -> list:
     """ev_analysis_{year}.csv から当日の予測を読み込む。"""
     year = datetime.now().year
@@ -54,22 +84,19 @@ def _load_predictions() -> list:
             try:
                 import pandas as pd
                 df = pd.read_csv(path, on_bad_lines="skip", low_memory=False)
-                preds = []
-                for _, row in df.iterrows():
-                    preds.append({
-                        "race_id":               str(row.get("race_code", row.get("race_id", ""))),
-                        "entry_id":              str(row.get("umaban",    row.get("entry_id", ""))),
-                        "win_prob":              float(row.get("win_probability",  0)),
-                        "place_prob":            float(row.get("place_probability", 0)),
-                        "expected_return":       float(row.get("expected_value",    row.get("ev", 0))),
-                        "uncertainty":           float(row.get("uncertainty", 0.30)),
-                        "odds":                  float(row.get("odds_decimal", row.get("tansho_odds", 100)) / (100 if float(row.get("tansho_odds", 100)) > 100 else 1)),
-                        "model_agreement_count": int(row.get("model_agreement_count", 2)),
-                    })
+                preds = _rows_to_predictions(df.to_dict(orient="records"))
                 log.info("予測読み込み: %s (%d件)", path.name, len(preds))
                 return preds
             except Exception as exc:
-                log.warning("予測読み込みエラー: %s", exc)
+                log.info("pandas 読み込み不可のため csv フォールバック: %s", exc)
+                try:
+                    with path.open("r", encoding="utf-8-sig", errors="replace", newline="") as f:
+                        rows = list(csv.DictReader(f))
+                    preds = _rows_to_predictions(rows)
+                    log.info("予測読み込み(csv): %s (%d件)", path.name, len(preds))
+                    return preds
+                except Exception as csv_exc:
+                    log.warning("予測読み込みエラー: %s", csv_exc)
     log.warning("ev_analysis CSV が見つかりません")
     return []
 

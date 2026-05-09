@@ -18,8 +18,9 @@ from scipy import stats
 from datetime import datetime
 from sqlalchemy import create_engine, text
 
-DB_URL  = "postgresql://postgres:trust@localhost:5433/mykeibadb"
-OUT_DIR = "D:\\keiba_ai\\pedigree_output"
+from pipeline.config import BASE_DIR, CSV_FEATURES, DB_URL, PEDIGREE_OUTPUT_DIR
+
+OUT_DIR = os.fspath(PEDIGREE_OUTPUT_DIR)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -361,9 +362,9 @@ def run_nicks_analysis(year_from: int = 2018, top_n: int = 30):
     print(f"{'='*68}")
     try:
         import pandas as pd
-        sim = pd.read_csv("D:\\keiba_ai\\simulation_2025.csv",
+        sim = pd.read_csv(os.path.join(BASE_DIR, "simulation_2025.csv"),
                           encoding="utf-8-sig", on_bad_lines="skip")
-        feat_df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
+        feat_df = pd.read_csv(CSV_FEATURES,
                               encoding="utf-8-sig", low_memory=False,
                               on_bad_lines="skip",
                               usecols=["race_code","bamei","chichi"])

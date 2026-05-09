@@ -4,11 +4,18 @@
 """
 import pandas as pd
 import numpy as np
+import pathlib
+import sys
 from sqlalchemy import create_engine, text
 from scipy import stats
 from datetime import datetime
 
-DB_URL = "postgresql://postgres:trust@localhost:5433/mykeibadb"
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from pipeline.config import CSV_FEATURES, DB_URL, PEDIGREE_OUTPUT_DIR
 
 
 # ──────────────────────────────────────────────
@@ -83,7 +90,7 @@ def build_3gen_nicks_features(year_from=2018):
     """
     nicks_analysis_18.py の3代ニックスCSVを読み込んで特徴量を追加する。
     """
-    nicks3_path = "D:\\keiba_ai\\pedigree_output\\nicks_3gen.csv"
+    nicks3_path = PEDIGREE_OUTPUT_DIR / "nicks_3gen.csv"
     try:
         nicks3 = pd.read_csv(nicks3_path, encoding="utf-8-sig")
         print(f"  📖 3代ニックス: {len(nicks3):,}組")
@@ -92,8 +99,18 @@ def build_3gen_nicks_features(year_from=2018):
         nicks3 = nicks3.rename(columns={
             'nick_index':     'nick3_index',
             'nick_roi':       'nick3_roi',
+            'roi':            'nick3_roi',
             'win_rate':       'nick3_win_rate',
         })
+        for key_col in ['chichi', 'haha_chichi', 'haha_haha_chichi']:
+            if key_col not in nicks3.columns:
+                nicks3[key_col] = ''
+        if 'nick3_roi' not in nicks3.columns:
+            nicks3['nick3_roi'] = 1.0
+        if 'nick3_index' not in nicks3.columns:
+            nicks3['nick3_index'] = nicks3['nick3_roi']
+        if 'nick3_win_rate' not in nicks3.columns:
+            nicks3['nick3_win_rate'] = 0.0
         return nicks3[['chichi', 'haha_chichi', 'haha_haha_chichi',
                         'nick3_index', 'nick3_roi', 'nick3_win_rate']].drop_duplicates()
     except FileNotFoundError:
@@ -137,7 +154,7 @@ def run_jockey_trainer_analysis():
     print("👑 騎手・調教師・3代ニックス分析")
     print("="*55)
 
-    df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df = pd.read_csv(CSV_FEATURES,
                      encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     n_before = len(df.columns)
 
@@ -154,7 +171,7 @@ def run_jockey_trainer_analysis():
     df = enrich_3gen_nicks(df)
 
     df = df.fillna(0)
-    df.to_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df.to_csv(CSV_FEATURES,
               index=False, encoding="utf-8-sig")
 
     n_after = len(df.columns)

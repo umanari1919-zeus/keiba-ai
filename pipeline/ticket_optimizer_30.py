@@ -10,8 +10,7 @@ from collections import Counter
 from typing import List, Dict, Optional
 import json, os
 from datetime import datetime
-
-BASE_DIR = "D:\\keiba_ai"
+from pipeline.config import BASE_DIR, CSV_FEATURES, DATA_DIR
 
 # JRA公式控除率
 TAKEOUT = {
@@ -242,7 +241,7 @@ def run_ticket_optimizer(year: int = None, bankroll: float = None) -> dict:
     print("="*55)
 
     if bankroll is None:
-        br_path = f"{BASE_DIR}\\data\\bankroll.json"
+        br_path = os.path.join(DATA_DIR, "bankroll.json")
         if os.path.exists(br_path):
             with open(br_path, encoding='utf-8') as f:
                 d = json.load(f)
@@ -251,7 +250,7 @@ def run_ticket_optimizer(year: int = None, bankroll: float = None) -> dict:
             bankroll = 100_000
     print(f"  💰 現在資金: {bankroll:,.0f}円")
 
-    feat_path = f"{BASE_DIR}\\keiba_data_features.csv"
+    feat_path = CSV_FEATURES
     if not os.path.exists(feat_path):
         print("  ⚠️ 特徴量ファイルなし")
         return {}
@@ -300,13 +299,13 @@ def run_ticket_optimizer(year: int = None, bankroll: float = None) -> dict:
             bar = '█' * (cnt * 20 // n)
             print(f"    {t:5s}: {cnt:3d}R ({cnt/n*100:4.0f}%) {bar}")
 
-    os.makedirs(f"{BASE_DIR}\\data", exist_ok=True)
-    out_path = f"{BASE_DIR}\\data\\ticket_recommendations_{year}.json"
+    os.makedirs(DATA_DIR, exist_ok=True)
+    out_path = os.path.join(DATA_DIR, f"ticket_recommendations_{year}.json")
     with open(out_path, 'w', encoding='utf-8') as f:
         json.dump(recommendations[:50], f, ensure_ascii=False, indent=2, default=str)
     print(f"\n  💾 保存: {out_path}")
 
-    md_path = f"{BASE_DIR}\\data\\ticket_recommendations_{year}.md"
+    md_path = os.path.join(DATA_DIR, f"ticket_recommendations_{year}.md")
     with open(md_path, 'w', encoding='utf-8') as f:
         f.write(f"# {year}年 馬券推薦サマリー\n\n")
         f.write(f"- 分析R数: {len(recommendations)}\n")

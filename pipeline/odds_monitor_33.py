@@ -11,8 +11,7 @@ import json, os
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from enum import Enum
-
-BASE_DIR = "D:\\keiba_ai"
+from pipeline.config import BASE_DIR, CSV_FEATURES, DATA_DIR
 
 
 # ─────────────────────────────────────────────────────────────
@@ -74,7 +73,7 @@ def analyze_odds_movement_history(df: pd.DataFrame) -> pd.DataFrame:
     """
     過去データにオッズ変動列がある場合に分析。
     JRAのデータには開幕オッズ(tansho_odds_open)と締め切り(tansho_odds)が
-    別々に存在する場合がある。存在しない場合は前走オッズとの比較で代替。
+    別々に存在する場合がある。存在しない場合は変動なしとして扱う。
     """
     if 'tansho_odds' not in df.columns:
         return pd.DataFrame()
@@ -82,13 +81,11 @@ def analyze_odds_movement_history(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df['tansho_odds_dec'] = pd.to_numeric(df['tansho_odds'], errors='coerce') / 10
 
-    # 開幕オッズがなければ前走オッズで代替
+    # 開幕オッズがなければ変動なし扱いにする（前走オッズは学習リーク防止のため使わない）
     if 'tansho_odds_open' in df.columns:
         df['opening'] = pd.to_numeric(df['tansho_odds_open'], errors='coerce') / 10
-    elif 'prev_odds' in df.columns:
-        df['opening'] = pd.to_numeric(df['prev_odds'], errors='coerce')
     else:
-        df['opening'] = df['tansho_odds_dec']  # 変動なし扱い
+        df['opening'] = df['tansho_odds_dec']
 
     df['movement_pct'] = (df['tansho_odds_dec'] - df['opening']) / df['opening'].clip(lower=0.1)
     df['movement'] = df.apply(
@@ -245,7 +242,7 @@ def run_odds_monitor(year: int = None) -> dict:
     print("📡 オッズ変動モニタリング")
     print("="*55)
 
-    feat_path = f"{BASE_DIR}\\keiba_data_features.csv"
+    feat_path = CSV_FEATURES
     if not os.path.exists(feat_path):
         print("  ⚠️ 特徴量ファイルなし")
         return {}
@@ -261,8 +258,7 @@ def run_odds_monitor(year: int = None) -> dict:
     if not hist.empty:
         print(hist.to_string(index=False))
     else:
-        print("  ⚠️ オッズ変動データなし（prev_odds 列が必要）")
-        # prev_oddsがある場合の仮統計を表示
+        print("  ⚠️ オッズ変動データなし（tansho_odds_open 等の開幕オッズ列が必要）")
         print("\n  💡 参考: 変動区分の定義")
         print("    SHARP  : オッズ5%以上下落  → プロ資金流入 → EV+2〜10%ボーナス")
         print("    STEAM  : オッズ10%以上上昇 → 資金離脱     → EV-3〜15%ペナルティ")
@@ -283,8 +279,9 @@ def run_odds_monitor(year: int = None) -> dict:
         'realtime_enabled':       bool(session_id),
         'poll_interval_sec':      60,
     }
-    os.makedirs(f"{BASE_DIR}\\data", exist_ok=True)
-    with open(f"{BASE_DIR}\\data\\odds_monitor_config.json", 'w', encoding='utf-8') as f:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    config_path = os.path.join(DATA_DIR, "odds_monitor_config.json")
+    with open(config_path, 'w', encoding='utf-8') as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
 
     print(f"  💾 設定保存: data/odds_monitor_config.json")

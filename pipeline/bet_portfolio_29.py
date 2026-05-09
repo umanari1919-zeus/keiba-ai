@@ -10,8 +10,7 @@ from scipy.optimize import minimize
 from typing import List, Dict, Tuple
 import json, os
 from datetime import datetime
-
-BASE_DIR = "D:\\keiba_ai"
+from pipeline.config import BASE_DIR, DATA_DIR
 
 MAX_HORSES_PER_RACE  = 3     # 1レース最大買い点数
 MAX_PORTFOLIO_RATIO  = 0.20  # 1日総投入上限（資金の20%）
@@ -162,7 +161,7 @@ def run_bet_portfolio(year: int = None, bankroll: float = None) -> dict:
     print("="*55)
 
     if bankroll is None:
-        br_path = f"{BASE_DIR}\\data\\bankroll.json"
+        br_path = os.path.join(DATA_DIR, "bankroll.json")
         if os.path.exists(br_path):
             with open(br_path, encoding='utf-8') as f:
                 d = json.load(f)
@@ -172,7 +171,7 @@ def run_bet_portfolio(year: int = None, bankroll: float = None) -> dict:
     print(f"  💰 現在資金: {bankroll:,.0f}円")
 
     # simulation CSV から候補取得
-    sim_path = f"{BASE_DIR}\\simulation_{year}.csv"
+    sim_path = os.path.join(BASE_DIR, f"simulation_{year}.csv")
     if not os.path.exists(sim_path):
         print(f"  ⚠️ {sim_path} なし")
         return {}
@@ -195,10 +194,11 @@ def run_bet_portfolio(year: int = None, bankroll: float = None) -> dict:
           f"({summary['portfolio_ratio']*100:.1f}%)")
     print(f"  📊 平均ベット : {summary['avg_per_bet']:,}円")
 
-    os.makedirs(f"{BASE_DIR}\\data", exist_ok=True)
+    os.makedirs(DATA_DIR, exist_ok=True)
     out = {'year': year, 'bankroll': bankroll, 'summary': summary,
            'optimized_picks': optimized[:50]}
-    with open(f"{BASE_DIR}\\data\\portfolio_v2_{year}.json", 'w', encoding='utf-8') as f:
+    out_path = os.path.join(DATA_DIR, f"portfolio_v2_{year}.json")
+    with open(out_path, 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False, indent=2, default=str)
     print(f"  💾 保存: data/portfolio_v2_{year}.json")
 

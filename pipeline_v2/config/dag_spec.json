@@ -29,6 +29,7 @@
     {
       "task_id": "rag_index",
       "script": "10_rag_index.py",
+      "args": ["--limit", "5000"],
       "depends_on": [
         "feature_gen"
       ]

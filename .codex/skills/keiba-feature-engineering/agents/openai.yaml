@@ -1,0 +1,3 @@
+interface:
+  display_name: "Keiba Feature Engineering"
+  short_description: "Design safe pre-race features for long-odds horse racing predictions."

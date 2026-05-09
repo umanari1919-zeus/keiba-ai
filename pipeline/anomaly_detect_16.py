@@ -6,15 +6,23 @@
 """
 import os
 import json
+import pathlib
+import sys
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from sqlalchemy import create_engine, text
 
-PERF_FILE    = "D:\\keiba_ai\\data\\model_performance.json"
-ALERT_OUT    = "D:\\keiba_ai\\data\\anomaly_alerts.json"
-DB_URL       = "postgresql://postgres:trust@localhost:5433/mykeibadb"
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from pipeline.config import DATA_DIR, DB_URL
+
+PERF_FILE = os.path.join(DATA_DIR, "model_performance.json")
+ALERT_OUT = os.path.join(DATA_DIR, "anomaly_alerts.json")
 
 # ──────────────────────────────────────────────────────────────
 # 共通ユーティリティ

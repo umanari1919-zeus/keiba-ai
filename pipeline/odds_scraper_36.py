@@ -10,11 +10,21 @@ Playwright オッズスクレイパー
 import re
 import json
 import os
+import pathlib
+import sys
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
 
-BASE_DIR = "D:\\keiba_ai"
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from pipeline.config import DATA_DIR as CONFIG_DATA_DIR
+
+DATA_DIR = os.fspath(CONFIG_DATA_DIR)
+DATA_PATH = pathlib.Path(DATA_DIR)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -307,8 +317,8 @@ def run_odds_scraper(date_str: Optional[str] = None,
             print(f"    {rid} {bamei} 単勝{od:.0f}倍 複勝{fmin:.1f}〜倍")
 
         # 保存
-        os.makedirs(f"{BASE_DIR}\\data", exist_ok=True)
-        out_path = f"{BASE_DIR}\\data\\odds_snapshot_{date_str}.json"
+        DATA_PATH.mkdir(exist_ok=True)
+        out_path = DATA_PATH / f"odds_snapshot_{date_str}.json"
         with open(out_path, 'w', encoding='utf-8') as f:
             json.dump(results, f, ensure_ascii=False, indent=2, default=str)
         print(f"\n  💾 保存: {out_path}")
@@ -328,5 +338,7 @@ if __name__ == "__main__":
     parser.add_argument('--date',    default=None, help='YYYYMMDD (default: today)')
     parser.add_argument('--monitor', action='store_true', help='リアルタイム監視モード')
     parser.add_argument('--show',    action='store_true', help='ブラウザを表示する')
-    args = parser.parse_args()
+    parser.add_argument('--trace_id', default='')
+    parser.add_argument('--run_tag',  default='')
+    args, _unknown = parser.parse_known_args()
     run_odds_scraper(args.date, monitor=args.monitor)
