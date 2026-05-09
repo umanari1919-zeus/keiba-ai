@@ -165,14 +165,18 @@ def predict_today(date_str: str = None) -> list:
 
     results = []
     n_estimated = 0
+    import numpy as np
     for rc, race_df in df.groupby("race_code"):
         race_df = race_df.sort_values("win_prob", ascending=False).copy()
         has_real_odds = (race_df["tansho_odds"].fillna(0).astype(float) > 0).any()
 
-        # レース内正規化勝率（合計100%になるよう按分）
-        raw_probs = race_df["win_prob"].clip(lower=1e-6)
-        norm_probs = (raw_probs / raw_probs.sum() * 100).round(1)
-        race_df["win_prob_norm"] = norm_probs.values
+        raw_probs = race_df["win_prob"].clip(lower=1e-6).values
+        # temperature scaling: compress overconfident predictions
+        log_probs = np.log(raw_probs)
+        TEMPERATURE = 1.8
+        scaled = np.exp(log_probs / TEMPERATURE)
+        norm_probs = (scaled / scaled.sum() * 100).round(1)
+        race_df["win_prob_norm"] = norm_probs
 
         if not has_real_odds:
             est_odds, est_ninki = estimate_odds_for_race(race_df)
