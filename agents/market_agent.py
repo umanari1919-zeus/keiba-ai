@@ -20,7 +20,6 @@ import math
 import os
 import pathlib
 from datetime import datetime, timezone
-from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
 
@@ -129,7 +128,7 @@ class MarketAgent(BaseAgent):
             last_odds  = entries[0]["odds_history"][-1]
             change_pct = (last_odds - first_odds) / max(first_odds, 0.1)
             steam_detected = change_pct < -STEAM_DROP_PCT
-            drift_detected = change_pct >  DRIFT_RISE_PCT
+            drift_detected = change_pct > DRIFT_RISE_PCT
 
         # 流動性インデックス (0〜1)
         liquidity = min(1.0, pool_est / 10_000_000)

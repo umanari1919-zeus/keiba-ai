@@ -47,3 +47,7 @@ build/
 .idea/
 Thumbs.db
 .DS_Store
+
+# ─── MLflow ────────────────────────────────────────────────
+mlruns/
+mlruns.db

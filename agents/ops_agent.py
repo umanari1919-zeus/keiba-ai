@@ -24,7 +24,6 @@ import os
 import pathlib
 import shutil
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
 
@@ -126,7 +125,7 @@ class OpsAgent(BaseAgent):
             return False, "model_v8.pkl が存在しません"
         mtime = datetime.fromtimestamp(pkl.stat().st_mtime, tz=timezone.utc)
         age_days = (datetime.now(timezone.utc) - mtime).days
-        return True, f"mtime={mtime.date()} age={age_days}d size={pkl.stat().st_size//1024}KB"
+        return True, f"mtime={mtime.date()} age={age_days}d size={pkl.stat().st_size // 1024}KB"
 
     def _check_disk(self) -> tuple[bool, float]:
         try:

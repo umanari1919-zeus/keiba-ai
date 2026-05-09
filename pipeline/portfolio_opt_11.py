@@ -10,6 +10,9 @@ from datetime import datetime
 from pipeline.kelly_bankroll_09 import load_bankroll, calculate_kelly_bet
 from pipeline.ev_engine_10 import build_ev_dataframe, extract_win_probabilities
 from pipeline.ensemble_utils import load_ensemble_weights
+import logging
+
+log = logging.getLogger(__name__)
 
 # 各馬券種の設定（推定的中確率補正・最低オッズ・ケリー分数）
 BET_CONFIG = {
@@ -99,7 +102,7 @@ def optimize_race_portfolio(p1, p2, p3,
 
 
 def run_portfolio_optimization(year=2025):
-    print(f"📊 [{datetime.now()}] 馬券ポートフォリオ最適化開始...")
+    log.info("[%s] 馬券ポートフォリオ最適化開始...", datetime.now())
 
     with open("D:\\keiba_ai\\model_v8.pkl", "rb") as f:
         saved = pickle.load(f)
@@ -117,7 +120,7 @@ def run_portfolio_optimization(year=2025):
     test_df = df[df['kaisai_nen'] == year].copy()
 
     if len(test_df) == 0:
-        print(f"⚠️ {year}年データなし")
+        log.warning("%d年データなし", year)
         return pd.DataFrame()
 
     X_test = test_df[features]
@@ -177,10 +180,8 @@ def run_portfolio_optimization(year=2025):
 
     results_df = pd.DataFrame(results)
 
-    print(f"\n{'='*60}")
-    print(f"📊 {year}年 馬券ポートフォリオ最適化結果")
-    print(f"💰 利用可能資金：{bankroll:,.0f}円")
-    print(f"{'='*60}")
+    log.info("%d年 馬券ポートフォリオ最適化結果", year)
+    log.info("利用可能資金：%s円", f"{bankroll:,.0f}")
 
     if len(results_df) > 0:
         # サマリー表示
@@ -189,19 +190,18 @@ def run_portfolio_optimization(year=2025):
             col_total = results_df[bt].sum()
             cnt = (results_df[bt] > 0).sum()
             if col_total > 0:
-                print(f"  {BET_NAMES[bt]}：{cnt}R  合計{col_total:,.0f}円")
+                log.info("%s：%dR  合計%s円", BET_NAMES[bt], cnt, f"{col_total:,.0f}")
 
         grand_total = results_df['total_bet'].sum()
-        print(f"\n  総投資予定額：{grand_total:,.0f}円")
-        print(f"  対象レース数：{len(results_df)}R")
+        log.info("総投資予定額：%s円", f"{grand_total:,.0f}")
+        log.info("対象レース数：%dR", len(results_df))
 
         out = f"D:\\keiba_ai\\portfolio_{year}.csv"
         results_df.to_csv(out, index=False, encoding="utf-8-sig")
-        print(f"\n💾 {out} に保存しました")
+        log.info("保存: %s", out)
     else:
-        print("本日は条件を満たすレースがありません")
+        log.info("本日は条件を満たすレースがありません")
 
-    print(f"{'='*60}")
     return results_df
 
 

@@ -7,7 +7,6 @@ inference_output_v1 スキーマ準拠の predictions を生成する。
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import pathlib

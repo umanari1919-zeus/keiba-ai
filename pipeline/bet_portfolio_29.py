@@ -4,12 +4,15 @@
 - 相関調整ケリー基準
 - 1日総投入上限・1レース上限管理
 """
+import logging
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 from typing import List, Dict, Tuple
 import json, os
 from datetime import datetime
+
+log = logging.getLogger(__name__)
 
 BASE_DIR = "D:\\keiba_ai"
 
@@ -157,9 +160,7 @@ def portfolio_optimize_all(picks: List[Dict], bankroll: float) -> Tuple[List[Dic
 def run_bet_portfolio(year: int = None, bankroll: float = None) -> dict:
     """メイン実行"""
     year = year or datetime.now().year
-    print("\n" + "="*55)
-    print("📊 多点買いポートフォリオ最適化")
-    print("="*55)
+    log.info("多点買いポートフォリオ最適化 開始")
 
     if bankroll is None:
         br_path = f"{BASE_DIR}\\data\\bankroll.json"
@@ -169,12 +170,12 @@ def run_bet_portfolio(year: int = None, bankroll: float = None) -> dict:
             bankroll = float(d.get('bankroll', d.get('current', 100_000)))
         else:
             bankroll = 100_000
-    print(f"  💰 現在資金: {bankroll:,.0f}円")
+    log.info("現在資金: %s円", f"{bankroll:,.0f}")
 
     # simulation CSV から候補取得
     sim_path = f"{BASE_DIR}\\simulation_{year}.csv"
     if not os.path.exists(sim_path):
-        print(f"  ⚠️ {sim_path} なし")
+        log.warning("simulation CSV なし: %s", sim_path)
         return {}
 
     df = pd.read_csv(sim_path, encoding='utf-8-sig')
@@ -189,18 +190,17 @@ def run_bet_portfolio(year: int = None, bankroll: float = None) -> dict:
     picks = df.to_dict('records')
     optimized, summary = portfolio_optimize_all(picks, bankroll)
 
-    print(f"  📌 対象レース : {summary['total_races']}R")
-    print(f"  🎯 最適ベット数: {summary['total_bets']}点")
-    print(f"  💴 総投入額   : {summary['total_amount']:,}円 "
-          f"({summary['portfolio_ratio']*100:.1f}%)")
-    print(f"  📊 平均ベット : {summary['avg_per_bet']:,}円")
+    log.info("対象レース: %dR", summary['total_races'])
+    log.info("最適ベット数: %d点", summary['total_bets'])
+    log.info("総投入額: %s円 (%.1f%%)", f"{summary['total_amount']:,}", summary['portfolio_ratio'] * 100)
+    log.info("平均ベット: %s円", f"{summary['avg_per_bet']:,}")
 
     os.makedirs(f"{BASE_DIR}\\data", exist_ok=True)
     out = {'year': year, 'bankroll': bankroll, 'summary': summary,
            'optimized_picks': optimized[:50]}
     with open(f"{BASE_DIR}\\data\\portfolio_v2_{year}.json", 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False, indent=2, default=str)
-    print(f"  💾 保存: data/portfolio_v2_{year}.json")
+    log.info("保存: data/portfolio_v2_%d.json", year)
 
     return summary
 

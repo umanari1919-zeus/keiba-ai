@@ -2,10 +2,13 @@
 リアルタイム回収率トラッキング
 日次・週次・月次の損益を自動集計し、目標回収率との乖離をアラートする。
 """
+import logging
 import pandas as pd
 import numpy as np
 import os
 from datetime import datetime, timedelta
+
+log = logging.getLogger(__name__)
 
 TRACKER_FILE = "D:\\keiba_ai\\data\\roi_tracker.csv"
 TARGET_ROI = 1.15       # 目標回収率 115%
@@ -66,9 +69,8 @@ def record_bet(race_code, bamei, bet_type, bet_amount, odds, hit, race_type='def
     }
     df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
     _save(df)
-    emoji = "🎉" if hit else "💸"
-    print(f"  {emoji} 記録：{bamei} {bet_type} {bet_amount:,}円 "
-          f"→ {'的中' if hit else '外れ'} ({profit:+,.0f}円)")
+    result_label = "的中" if hit else "外れ"
+    log.info("記録：%s %s %s円 → %s (%+,.0f円)", bamei, bet_type, f"{bet_amount:,}", result_label, profit)
     return df
 
 
@@ -309,7 +311,7 @@ def import_from_simulation(simulation_csv, year=2025):
     初回セットアップ用。
     """
     df = pd.read_csv(simulation_csv, encoding="utf-8-sig", on_bad_lines="skip")
-    print(f"📥 {len(df)}件のシミュレーション結果をインポート中...")
+    log.info("%d件のシミュレーション結果をインポート中...", len(df))
 
     imported = 0
     for _, row in df.iterrows():
@@ -343,7 +345,7 @@ def import_from_simulation(simulation_csv, year=2025):
         _save(tracker_df)
         imported += 1
 
-    print(f"✅ {imported}件をインポートしました")
+    log.info("%d件をインポートしました", imported)
 
 
 if __name__ == "__main__":

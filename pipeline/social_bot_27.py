@@ -8,9 +8,33 @@ APIキーは .env ファイルに設定してください。
 """
 import os
 import json
+import logging
 import asyncio
 import pandas as pd
 from datetime import datetime
+
+log = logging.getLogger(__name__)
+
+try:
+    from tenacity import retry, stop_after_attempt, wait_exponential
+    _retry = retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
+except ImportError:
+    def _retry(fn):
+        return fn
+
+DEAD_LETTER_FILE = os.path.join("D:\\keiba_ai", "data", "sns_dead_letter.jsonl")
+
+
+def _write_dead_letter(channel: str, message: str, error: str) -> None:
+    os.makedirs(os.path.dirname(DEAD_LETTER_FILE), exist_ok=True)
+    entry = {
+        "channel": channel,
+        "message": message,
+        "error": str(error),
+        "timestamp": datetime.now().isoformat(),
+    }
+    with open(DEAD_LETTER_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 # ─── .env 読み込み ─────────────────────────────
 def _load_env():
@@ -81,13 +105,19 @@ def post_to_x(text: str) -> bool:
             access_token=os.environ.get('X_ACCESS_TOKEN'),
             access_token_secret=os.environ.get('X_ACCESS_TOKEN_SECRET'),
         )
-        response = client.create_tweet(text=text)
-        print(f"  ✅ X投稿完了: tweet_id={response.data['id']}")
+
+        @_retry
+        def _send():
+            return client.create_tweet(text=text)
+
+        response = _send()
+        log.info("X投稿完了: tweet_id=%s", response.data['id'])
         return True
     except ImportError:
-        print("  ⚠️ tweepy が未インストール: pip install tweepy")
+        log.warning("tweepy が未インストール: pip install tweepy")
     except Exception as e:
-        print(f"  ⚠️ X投稿エラー: {e}")
+        log.warning("X投稿エラー: %s", e)
+        _write_dead_letter("X", text, str(e))
     return False
 
 
@@ -114,11 +144,17 @@ def post_to_discord(text: str) -> bool:
             headers={'Content-Type': 'application/json'},
             method='POST'
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            print(f"  ✅ Discord投稿完了: status={resp.status}")
+
+        @_retry
+        def _send():
+            return urllib.request.urlopen(req, timeout=10)
+
+        with _send() as resp:
+            log.info("Discord投稿完了: status=%s", resp.status)
             return True
     except Exception as e:
-        print(f"  ⚠️ Discord投稿エラー: {e}")
+        log.warning("Discord投稿エラー: %s", e)
+        _write_dead_letter("Discord", text, str(e))
     return False
 
 
@@ -147,9 +183,10 @@ def post_to_telegram(text: str) -> bool:
         print("  ✅ Telegram送信完了")
         return True
     except ImportError:
-        print("  ⚠️ python-telegram-bot が未インストール")
+        log.warning("python-telegram-bot が未インストール")
     except Exception as e:
-        print(f"  ⚠️ Telegram送信エラー: {e}")
+        log.warning("Telegram送信エラー: %s", e)
+        _write_dead_letter("Telegram", text, str(e))
     return False
 
 
@@ -173,9 +210,10 @@ def post_to_line(text: str) -> bool:
         print("  ✅ LINE送信完了")
         return True
     except ImportError:
-        print("  ⚠️ line-bot-sdk が未インストール")
+        log.warning("line-bot-sdk が未インストール")
     except Exception as e:
-        print(f"  ⚠️ LINE送信エラー: {e}")
+        log.warning("LINE送信エラー: %s", e)
+        _write_dead_letter("LINE", text, str(e))
     return False
 
 

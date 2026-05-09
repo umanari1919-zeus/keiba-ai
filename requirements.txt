@@ -39,6 +39,9 @@ fastapi>=0.104.0        # REST API フレームワーク
 uvicorn[standard]>=0.24.0  # ASGI サーバー
 pydantic>=2.3.0         # データ検証
 
+# ── 実験管理 ─────────────────────────────────────────
+mlflow>=2.10
+
 # ── LLM・AI API ──────────────────────────────────────
 anthropic>=0.25        # Claude Haiku コメント生成
 # ollama               # pip install ollama  (ローカルLLM)

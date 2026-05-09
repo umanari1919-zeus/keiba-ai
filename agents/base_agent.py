@@ -16,7 +16,6 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
 
 from .audit_logger import AuditLogger, sha256_of
 from .schema_registry import SchemaRegistry

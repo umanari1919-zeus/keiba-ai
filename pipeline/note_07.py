@@ -1,8 +1,11 @@
+import logging
 import os
 import json
 import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+log = logging.getLogger(__name__)
 
 JST      = ZoneInfo("Asia/Tokyo")
 BASE_DIR = "D:\\keiba_ai"
@@ -71,7 +74,7 @@ def _try_ollama(prompt: str, system: str = "", temperature: float = 0.75) -> str
                            temperature=temperature, stream=True, task="japanese")
         return result or ""
     except Exception as e:
-        print(f"  [note_07] ollama skip: {e}")
+        log.warning("[note_07] ollama skip: %s", e)
         return ""
 
 
@@ -153,7 +156,7 @@ def _gen_closing(bankroll: int) -> str:
 # ─────────────────────────────────────────────────────────────
 
 def generate_note_article(date_str: str = None) -> str:
-    print(f"[note_07] note.com article generation start...")
+    log.info("[note_07] note.com article generation start...")
     if date_str is None:
         date_str = datetime.now(tz=JST).strftime("%Y%m%d")
 
@@ -162,7 +165,7 @@ def generate_note_article(date_str: str = None) -> str:
     stats    = _load_roi_stats()
     bankroll = _load_bankroll()
 
-    print(f"  picks: {len(picks)}, bankroll: {bankroll:,}yen")
+    log.info("  picks: %d, bankroll: %syen", len(picks), f"{bankroll:,}")
 
     sections = [
         f"# {date_fmt} umanari-jizo AI anauma picks report",
@@ -172,7 +175,7 @@ def generate_note_article(date_str: str = None) -> str:
     ]
 
     # intro
-    print("  (1) intro...")
+    log.info("  (1) intro...")
     sections.append(_gen_intro(date_fmt, len(picks), bankroll))
     sections.append("")
 
@@ -187,7 +190,7 @@ def generate_note_article(date_str: str = None) -> str:
             kelly = bet.get("kelly_bet", 0)
             sections.append(f"### {i}. {bamei}  {odds:.1f}x  EV{ev*100:.0f}%")
             sections.append("")
-            print(f"  ({i+1}) {bamei} analysis...")
+            log.info("  (%d) %s analysis...", i + 1, bamei)
             sections.append(_gen_pick_analysis(bet))
             sections.append(f"\n> bet: {kelly:,}yen (Kelly criteria)")
             sections.append("")
@@ -206,7 +209,7 @@ def generate_note_article(date_str: str = None) -> str:
             f"| returned | {stats['returned']:,.0f}yen |"
         )
         sections.append("")
-        print(f"  stats commentary...")
+        log.info("  stats commentary...")
         sections.append(_gen_stats_commentary(stats))
         sections.append("")
 
@@ -232,7 +235,7 @@ def generate_note_article(date_str: str = None) -> str:
     ])
 
     # closing
-    print("  closing...")
+    log.info("  closing...")
     sections.append("---")
     sections.append("")
     sections.append(_gen_closing(bankroll))
@@ -248,7 +251,7 @@ def generate_note_article(date_str: str = None) -> str:
     with open(filename, "w", encoding="utf-8") as f:
         f.write(article)
 
-    print(f"  saved: {filename}  ({len(article):,} chars)")
+    log.info("  saved: %s  (%d chars)", filename, len(article))
     return article
 
 

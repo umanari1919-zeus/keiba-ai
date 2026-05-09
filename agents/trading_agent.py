@@ -20,7 +20,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
-from .audit_logger import sha256_of
 from .market_agent import MarketAgent
 
 log = logging.getLogger(__name__)

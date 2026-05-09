@@ -1,0 +1,22 @@
+[project]
+name = "umanari-jizo-ai"
+version = "2.0.0"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+markers = [
+    "unit: unit tests (no DB, no network)",
+    "integration: integration tests (may need DB)",
+    "slow: slow tests (>10s)",
+]
+addopts = "--strict-markers"
+
+[tool.coverage.run]
+source = ["agents", "api", "pipeline"]
+omit = ["*/tests/*", "*/__init__.py"]
+
+[tool.coverage.report]
+fail_under = 10
+show_missing = true

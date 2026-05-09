@@ -4,12 +4,15 @@
 - 出走頭数・オッズ・勝率に応じて最適馬券種を自動選択
 - Harville モデルによる複合馬券の確率推定
 """
+import logging
 import numpy as np
 import pandas as pd
 from collections import Counter
 from typing import List, Dict, Optional
 import json, os
 from datetime import datetime
+
+log = logging.getLogger(__name__)
 
 BASE_DIR = "D:\\keiba_ai"
 
@@ -237,9 +240,7 @@ def select_optimal_ticket(candidates: List[Dict], bankroll: float,
 
 def run_ticket_optimizer(year: int = None, bankroll: float = None) -> dict:
     year = year or datetime.now().year
-    print("\n" + "="*55)
-    print("🎟️ 馬券種別自動選択システム")
-    print("="*55)
+    log.info("馬券種別自動選択システム 開始")
 
     if bankroll is None:
         br_path = f"{BASE_DIR}\\data\\bankroll.json"
@@ -249,19 +250,19 @@ def run_ticket_optimizer(year: int = None, bankroll: float = None) -> dict:
             bankroll = float(d.get('bankroll', d.get('current', 100_000)))
         else:
             bankroll = 100_000
-    print(f"  💰 現在資金: {bankroll:,.0f}円")
+    log.info("現在資金: %s円", f"{bankroll:,.0f}")
 
     feat_path = f"{BASE_DIR}\\keiba_data_features.csv"
     if not os.path.exists(feat_path):
-        print("  ⚠️ 特徴量ファイルなし")
+        log.warning("特徴量ファイルなし: %s", feat_path)
         return {}
 
     df = pd.read_csv(feat_path, encoding='utf-8-sig', low_memory=False, on_bad_lines='skip')
     df = df[df['kaisai_nen'] == year].fillna(0)
-    print(f"  📊 {year}年データ: {len(df):,}件")
+    log.info("%d年データ: %d件", year, len(df))
 
     if 'race_code' not in df.columns:
-        print("  ⚠️ race_code なし")
+        log.warning("race_code なし")
         return {}
 
     recommendations = []
@@ -295,16 +296,15 @@ def run_ticket_optimizer(year: int = None, bankroll: float = None) -> dict:
     dist = Counter(r.get('ticket_type', '?') for r in recommendations)
     if recommendations:
         n = len(recommendations)
-        print(f"\n  🎟️ 推奨馬券種分布 ({n}R):")
+        log.info("推奨馬券種分布 (%dR):", n)
         for t, cnt in dist.most_common():
-            bar = '█' * (cnt * 20 // n)
-            print(f"    {t:5s}: {cnt:3d}R ({cnt/n*100:4.0f}%) {bar}")
+            log.info("  %s: %dR (%.0f%%)", t, cnt, cnt / n * 100)
 
     os.makedirs(f"{BASE_DIR}\\data", exist_ok=True)
     out_path = f"{BASE_DIR}\\data\\ticket_recommendations_{year}.json"
     with open(out_path, 'w', encoding='utf-8') as f:
         json.dump(recommendations[:50], f, ensure_ascii=False, indent=2, default=str)
-    print(f"\n  💾 保存: {out_path}")
+    log.info("保存: %s", out_path)
 
     md_path = f"{BASE_DIR}\\data\\ticket_recommendations_{year}.md"
     with open(md_path, 'w', encoding='utf-8') as f:
@@ -323,7 +323,7 @@ def run_ticket_optimizer(year: int = None, bankroll: float = None) -> dict:
                 f"{top} | {second} / {third} | {r.get('est_odds', 0):.1f} | "
                 f"{r.get('ev', 0)*100:+.1f}% | {r.get('recommended_bet', 0):,}円 | {r.get('reason','')} |\n"
             )
-    print(f"  📝 保存: {md_path}")
+    log.info("保存: %s", md_path)
 
     return {'n_analyzed': len(recommendations), 'dist': dict(dist)}
 

@@ -10,7 +10,7 @@ mlflow_register.py — MLflow 実験トラッキング & モデルレジスト�
   python mlflow_register.py --list
 
   # MLflow UI 起動
-  mlflow ui --backend-store-uri file:///D:/keiba_ai/mlflow_tracking
+  mlflow ui --backend-store-uri sqlite:///D:/keiba_ai/mlruns.db
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from pathlib import Path
 
 TRACKING_URI = os.getenv(
     "MLFLOW_TRACKING_URI",
-    f"file:///{Path(os.getenv('KEIBA_BASE', 'D:/keiba_ai')).as_posix()}/mlflow_tracking",
+    f"sqlite:///{Path(os.getenv('KEIBA_BASE', 'D:/keiba_ai')).as_posix()}/mlruns.db",
 )
 EXPERIMENT_NAME = "umanari-ensemble"
 MODEL_NAME = "umanari-model"

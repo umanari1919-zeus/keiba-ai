@@ -4,6 +4,7 @@ Claude Haiku 4.5 + prompt caching + ローカルキャッシュで低コスト�
 
 APIキーなし時はテンプレートにフォールバック。
 """
+import logging
 import os
 import json
 import random
@@ -11,6 +12,8 @@ import hashlib
 import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
+
+log = logging.getLogger(__name__)
 
 load_dotenv("D:\\keiba_ai\\.env")
 
@@ -88,10 +91,10 @@ def _call_ollama(bamei: str, odds: float, kishumei: str,
         )
         result = _generate(prompt, system=SYSTEM_PERSONA, model=model, temperature=0.8)
         if result:
-            print(f"  🤖 Ollama生成: {len(result)}文字")
+            log.info("  Ollama生成: %d文字", len(result))
         return result or ""
     except Exception as e:
-        print(f"  [ollama] comment skip: {e}")
+        log.warning("  [ollama] comment skip: %s", e)
         return ""
 
 
@@ -138,10 +141,10 @@ def _call_nvidia(bamei: str, odds: float, kishumei: str,
         )
         result = response.choices[0].message.content.strip()
         if result:
-            print(f"  🟢 NVIDIA API生成: {len(result)}文字")
+            log.info("  NVIDIA API生成: %d文字", len(result))
         return result or ""
     except Exception as e:
-        print(f"  [nvidia] comment skip: {e}")
+        log.warning("  [nvidia] comment skip: %s", e)
         return ""
 
 
@@ -190,16 +193,16 @@ def _call_claude(bamei: str, odds: float, kishumei: str,
         cache_hit = getattr(usage, 'cache_read_input_tokens', 0)
         cache_write = getattr(usage, 'cache_creation_input_tokens', 0)
         if cache_hit > 0:
-            print(f"  💾 キャッシュヒット: {cache_hit}トークン節約")
+            log.info("  キャッシュヒット: %dトークン節約", cache_hit)
         elif cache_write > 0:
-            print(f"  📝 キャッシュ書込: {cache_write}トークン（次回から節約）")
+            log.info("  キャッシュ書込: %dトークン（次回から節約）", cache_write)
 
         return response.content[0].text.strip()
 
     except ImportError:
         return ""   # APIなし → フォールバックへ
     except Exception as e:
-        print(f"  ⚠️ Claude API エラー（テンプレートで代替）: {e}")
+        log.warning("  Claude API エラー（テンプレートで代替）: %s", e)
         return ""
 
 
@@ -249,7 +252,7 @@ def generate_comment(bamei: str, odds: float, kishumei: str,
     cache = _load_cache()
 
     if key in cache:
-        print(f"  ✅ ローカルキャッシュヒット: {bamei}")
+        log.info("  ローカルキャッシュヒット: %s", bamei)
         return cache[key]
 
     # 優先順位: Ollama（無料・ローカル）→ NVIDIA API（無料枠）→ Claude API（有料）→ テンプレート
@@ -281,22 +284,22 @@ def generate_comment(bamei: str, odds: float, kishumei: str,
 
 
 def generate_todays_post() -> str:
-    print(f"📝 [{datetime.now()}] 本日の予想コメント生成中...")
+    log.info("[%s] 本日の予想コメント生成中...", datetime.now())
 
     try:
         df = pd.read_csv("D:\\keiba_ai\\simulation_2025.csv",
                          encoding="utf-8-sig", on_bad_lines="skip")
     except FileNotFoundError:
-        print("❌ simulation_2025.csv が見つかりません")
+        log.warning("simulation_2025.csv が見つかりません")
         return ""
 
     df_ana = df[df['odds'] >= 3].copy()
     if len(df_ana) == 0:
-        print("❌ 穴馬候補がありません")
+        log.warning("穴馬候補がありません")
         return ""
 
     sample = df_ana.sample(1).iloc[0]
-    print(f"  選択: {sample['bamei']} ({sample['odds']:.1f}倍)")
+    log.info("  選択: %s (%.1f倍)", sample['bamei'], sample['odds'])
 
     comment = generate_comment(
         bamei=str(sample['bamei']),
@@ -315,13 +318,9 @@ def generate_todays_post() -> str:
                  f"💰 オッズ：{sample['odds']:.1f}倍\n\n"
                  f"#競馬予想 #うまなり地蔵 #AI予想 #穴馬")
 
-    print("\n" + "="*40)
-    print(post_text)
-    print("="*40)
-
     with open("D:\\keiba_ai\\today_post.txt", "w", encoding="utf-8") as f:
         f.write(post_text)
-    print("💾 today_post.txt に保存しました")
+    log.info("today_post.txt に保存しました")
 
     return post_text
 

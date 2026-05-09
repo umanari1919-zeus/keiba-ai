@@ -5,7 +5,7 @@ scheduler.py の 8 ジョブを管理し、
 Admin API でジョブ状態取得・手動トリガーを実現する。
 """
 from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 class SchedulerService:

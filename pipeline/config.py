@@ -29,7 +29,7 @@ EV_THRESHOLD     = 0.15   # 期待値閾値（15%以上）
 MIN_ODDS         = 10.0   # 最低オッズ（10倍以上）
 MIN_ODDS_RAW     = 100    # tansho_odds は x10 格納形式（10倍 = 100）
 ANABA_ODDS_RAW   = 300    # 穴馬定義（30倍 = 300）
-KELLY_FRACTION   = 0.10   # Kelly 基準の分数（1/10 Kelly）
+KELLY_FRACTION   = 0.1   # Kelly 基準の分数（1/10 Kelly）
 
 # レースタイプ別 EV 閾値
 EV_THRESHOLDS_BY_TYPE = {
@@ -41,7 +41,7 @@ EV_THRESHOLDS_BY_TYPE = {
 
 # バックテスト用（保守的な閾値）
 EV_THRESHOLD_BACKTEST = 0.05
-MIN_ODDS_BACKTEST     = 5.0
+MIN_ODDS_BACKTEST     = 10.0
 
 # ── モデルファイル ─────────────────────────────────────
 MODEL_PATH    = os.path.join(BASE_DIR, "model_v8.pkl")

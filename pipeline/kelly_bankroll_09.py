@@ -1,6 +1,9 @@
 import json
+import logging
 import os
 from datetime import datetime
+
+log = logging.getLogger(__name__)
 
 BANKROLL_FILE = "D:\\keiba_ai\\data\\bankroll.json"
 KELLY_FRACTION = 0.10  # 1/10ケリー（WF検証DD64%→安全係数に引き下げ）
@@ -73,8 +76,8 @@ def update_bankroll(race_code, bamei, bet_amount, odds, hit,
 
     roi = (data['current'] - data['initial']) / data['initial'] * 100
     result_str = f"的中 +{profit:,.0f}円" if hit else f"外れ {profit:,.0f}円"
-    print(f"  💰 資金更新：{result_str}")
-    print(f"  📊 現在資金：{data['current']:,.0f}円 (初期比 {roi:+.1f}%)")
+    log.info("資金更新：%s", result_str)
+    log.info("現在資金：%s円 (初期比 %+.1f%%)", f"{data['current']:,.0f}", roi)
     return data['current']
 
 
@@ -85,7 +88,7 @@ def get_bankroll_status():
     roi = (current - initial) / initial * 100
 
     print(f"\n{'='*45}")
-    print(f"💰 資金状況レポート")
+    print(f"資金状況レポート")
     print(f"{'='*45}")
     print(f"初期資金：{initial:,.0f}円")
     print(f"現在資金：{current:,.0f}円")
@@ -99,7 +102,8 @@ def get_bankroll_status():
 
         # 破産リスク警告
         if current < initial * 0.5:
-            print("🚨 警告：資金が初期の50%を下回りました。賭け金を見直してください")
+            log.warning("資金が初期の50%%を下回りました。賭け金を見直してください")
+            print("警告：資金が初期の50%を下回りました。賭け金を見直してください")
 
     print(f"{'='*45}")
     return data

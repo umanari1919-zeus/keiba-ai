@@ -100,8 +100,8 @@ class BankrollAgent(BaseAgent):
         result_bets = []
         for b in risk_bets:
             amt = int(b.get("finalized_bet_amount",
-                            b.get("recommended_bet",
-                            b.get("stake_amount", 1000))))
+                         b.get("recommended_bet",
+                               b.get("stake_amount", 1000))))
             adjusted = max(100, round(amt * multiplier / 100) * 100)
             result_bets.append({**b, "finalized_bet_amount": adjusted,
                                  "bankroll_multiplier": round(multiplier, 4)})

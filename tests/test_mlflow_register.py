@@ -27,7 +27,7 @@ class TestMlflowRegister:
         with open(pkl_path, "wb") as f:
             pickle.dump(model_data, f)
 
-        monkeypatch.setenv("MLFLOW_TRACKING_URI", f"file:///{tmp_path.as_posix()}/mlflow")
+        monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path.as_posix()}/mlruns.db")
 
         from mlflow_register import register_model
         meta = register_model(str(pkl_path))
@@ -49,13 +49,13 @@ class TestMlflowRegister:
             register_model("/nonexistent/model.pkl")
 
     def test_list_runs_no_experiment(self, tmp_path, monkeypatch, capsys):
-        empty_uri = f"file:///{(tmp_path / 'mlflow_isolated').as_posix()}"
+        sqlite_uri = f"sqlite:///{(tmp_path / 'mlflow_isolated.db').as_posix()}"
 
         import mlflow
         import mlflow_register
-        monkeypatch.setattr(mlflow_register, "TRACKING_URI", empty_uri)
+        monkeypatch.setattr(mlflow_register, "TRACKING_URI", sqlite_uri)
         monkeypatch.setattr(mlflow_register, "EXPERIMENT_NAME", "nonexistent-exp")
-        mlflow.set_tracking_uri(empty_uri)
+        mlflow.set_tracking_uri(sqlite_uri)
 
         mlflow_register.list_runs()
 

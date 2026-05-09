@@ -19,8 +19,7 @@ import json
 import logging
 import os
 import pathlib
-import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
