@@ -171,10 +171,11 @@ def predict_today(date_str: str = None) -> list:
         has_real_odds = (race_df["tansho_odds"].fillna(0).astype(float) > 0).any()
 
         raw_probs = race_df["win_prob"].clip(lower=1e-6).values
-        # temperature scaling: compress overconfident predictions
         log_probs = np.log(raw_probs)
-        TEMPERATURE = 1.8
-        scaled = np.exp(log_probs / TEMPERATURE)
+        # 推定オッズ時はT=1.8で圧縮、実オッズ時はT=1.0（バックテスト最適値）
+        uses_market_odds = "market_odds" in race_df.columns and (race_df["market_odds"].fillna(0) > 0).any()
+        T = 1.8 if (not has_real_odds or uses_market_odds) else 1.0
+        scaled = np.exp(log_probs / T)
         norm_probs = (scaled / scaled.sum() * 100).round(1)
         race_df["win_prob_norm"] = norm_probs
 
