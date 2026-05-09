@@ -716,6 +716,11 @@ def save_today_entries(date_str=None) -> str:
     try:
         from pipeline.db_sync_42 import add_ingest_meta, write_snapshot
         snapshot = add_ingest_meta(df.assign(trade_date=date_str), source_name=f"shutsuba_fetch:{date_str}")
+        import numpy as np
+        for col in snapshot.select_dtypes(include=[np.integer]).columns:
+            snapshot[col] = snapshot[col].astype(int)
+        for col in snapshot.select_dtypes(include=[np.floating]).columns:
+            snapshot[col] = snapshot[col].astype(float)
         ok = write_snapshot(
             snapshot,
             "today_entries_snapshot",
@@ -725,7 +730,8 @@ def save_today_entries(date_str=None) -> str:
         if ok:
             print(f"[shutsuba_fetch] DB同期: today_entries_snapshot ({date_str})")
     except Exception as e:
-        print(f"[shutsuba_fetch] DB同期スキップ: {e}")
+        err_msg = str(e)[:200]
+        print(f"[shutsuba_fetch] DB同期スキップ: {err_msg}")
     print(f"[shutsuba_fetch] 保存: {out}")
     return out
 

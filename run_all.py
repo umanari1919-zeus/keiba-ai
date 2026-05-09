@@ -351,7 +351,7 @@ def run_all(
     print(f"\n📱 ダッシュボード: streamlit run pipeline/dashboard_15.py")
 
 
-def run_morning(skip_social=False):
+def run_morning(skip_social=False, skip_fetch=False):
     """
     Morning prediction mode v2 -- parallelized for speed.
     serial:  DB sync -> entries -> data fetch -> features -> adv features
@@ -374,13 +374,17 @@ def run_morning(skip_social=False):
     # P1: serial data + features
     print("\n[P1] data fetch + features (serial)")
 
-    _run_mykeibadb_sync()
+    if not skip_fetch:
+        _run_mykeibadb_sync()
 
-    from pipeline.shutsuba_fetch import save_today_entries
-    from pipeline.data_fetch_01 import fetch_data
+        from pipeline.shutsuba_fetch import save_today_entries
+        from pipeline.data_fetch_01 import fetch_data
+        _safe("shutsuba",    save_today_entries)
+        _safe("data_fetch",  fetch_data)
+    else:
+        print("  [skip] data fetch skipped")
+
     from pipeline.feature_eng_02 import feature_engineering
-    _safe("shutsuba",    save_today_entries)
-    _safe("data_fetch",  fetch_data)
     _safe("feature_eng", feature_engineering)
 
     # advanced features: serial (shared CSV writes - cannot parallelize)
@@ -756,7 +760,7 @@ if __name__ == "__main__":
     elif args.morning:
         # 朝の予想モード: 学習・高度特徴量・NN・RL・統計をスキップ
         print("🌅 朝の予想モードで実行します（約3分）")
-        run_morning(skip_social=args.skip_social)
+        run_morning(skip_social=args.skip_social, skip_fetch=args.skip_fetch)
     else:
         run_all(
             skip_fetch=args.skip_fetch,
