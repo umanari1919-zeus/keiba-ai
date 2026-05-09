@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 from typing import Set, Dict
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket
 
 
 class ConnectionManager:

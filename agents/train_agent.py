@@ -21,8 +21,6 @@ import pickle
 import subprocess
 import sys
 from datetime import datetime, timezone
-from typing import Any
-
 from .base_agent import BaseAgent, AgentMeta
 
 log = logging.getLogger(__name__)

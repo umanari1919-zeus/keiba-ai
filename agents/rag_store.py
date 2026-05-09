@@ -20,8 +20,6 @@ import logging
 import math
 import os
 import pathlib
-from typing import Any
-
 log = logging.getLogger(__name__)
 
 BASE_DIR   = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
@@ -129,7 +127,7 @@ class RAGStore:
 
         elif self._backend == "faiss":
             try:
-                import faiss, numpy as np
+                import faiss
                 self._faiss_index = faiss.IndexFlatL2(EMBED_DIM)
                 self._faiss_meta: list[dict] = []
                 # 永続化ファイルから読み込み
@@ -251,7 +249,8 @@ class RAGStore:
             return sum(1 for _ in open(self._json_path, encoding="utf-8"))
 
     def _save_faiss(self) -> None:
-        import faiss, json
+        import faiss
+        import json
         faiss_path = STORE_DIR / f"{self.collection}.faiss"
         meta_path  = STORE_DIR / f"{self.collection}_meta.json"
         faiss.write_index(self._faiss_index, str(faiss_path))

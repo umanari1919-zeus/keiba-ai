@@ -13,11 +13,9 @@ import os
 import pathlib
 import subprocess
 import sys
-import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
-from .base_agent import BaseAgent, AgentMeta, AgentResult
-from .audit_logger import sha256_of
+from .base_agent import BaseAgent, AgentMeta
 
 log = logging.getLogger(__name__)
 
@@ -93,7 +91,8 @@ class IngestAgent(BaseAgent):
 
     def _register_snapshot(self, snap_id: str, files: list, meta: AgentMeta) -> None:
         try:
-            import psycopg2, json
+            import psycopg2
+            import json
             import os
             db_url = os.getenv("KEIBA_DB_URL", "postgresql://postgres:trust@localhost:5433/mykeibadb")
             sql = """

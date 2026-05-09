@@ -7,7 +7,7 @@ Settings API で動的設定変更を実現する。
 import re
 import importlib
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from datetime import datetime
 
 

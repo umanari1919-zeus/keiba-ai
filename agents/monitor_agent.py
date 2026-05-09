@@ -12,7 +12,6 @@ import logging
 import os
 import pathlib
 from datetime import datetime, timezone
-from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
 

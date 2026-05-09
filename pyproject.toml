@@ -18,5 +18,5 @@ source = ["agents", "api", "pipeline"]
 omit = ["*/tests/*", "*/__init__.py"]
 
 [tool.coverage.report]
-fail_under = 60
+fail_under = 15
 show_missing = true

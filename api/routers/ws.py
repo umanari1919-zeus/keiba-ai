@@ -9,7 +9,7 @@ WebSocket ルーター
 import asyncio
 from fastapi import APIRouter, WebSocketDisconnect
 from fastapi.websockets import WebSocket
-from ..websockets import manager, LogStreamer, OddsUpdater, NotificationBroadcaster
+from ..websockets import manager, LogStreamer, OddsUpdater
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
 

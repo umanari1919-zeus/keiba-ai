@@ -42,8 +42,7 @@ class OddsMonitorAgent(BaseAgent):
         )
 
     def _run(self, meta: AgentMeta, payload: dict) -> dict[str, Any]:
-        year       = payload.get("year") or datetime.now().year
-        race_codes = payload.get("race_codes")
+        year = payload.get("year") or datetime.now().year
 
         mod = self._load_module()
         if mod is None:
@@ -54,8 +53,8 @@ class OddsMonitorAgent(BaseAgent):
             if not isinstance(result, dict):
                 result = {}
 
-            signals       = result.get("signals",       [])
-            ev_adjustments= result.get("ev_adjustments", {})
+            signals        = result.get("signals", [])
+            ev_adjustments = result.get("ev_adjustments", {})
 
             sharp_count = sum(1 for s in signals if s.get("movement") == "SHARP")
             steam_count = sum(1 for s in signals if s.get("movement") == "STEAM")

@@ -13,11 +13,10 @@ manifest: odds-scraper-agent v1.0.0
 from __future__ import annotations
 
 import importlib.util
-import json
 import logging
 import os
 import pathlib
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta

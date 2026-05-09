@@ -60,8 +60,8 @@ class ConditionAdjusterAgent(BaseAgent):
             track_code = bet.get("track_code", "1")  # 1=芝, 2=ダート
 
             adj_amount = int(bet.get("finalized_bet_amount",
-                                     bet.get("recommended_bet",
-                                     bet.get("stake_amount", 1000))))
+                              bet.get("recommended_bet",
+                                      bet.get("stake_amount", 1000))))
             coeff = 1.0
             grade = "B"
 

@@ -10,13 +10,10 @@ from __future__ import annotations
 import logging
 import os
 import pathlib
-import subprocess
-import sys
 
 import pandas as pd
 
 from .base_agent import BaseAgent, AgentMeta
-from .audit_logger import sha256_of
 
 log = logging.getLogger(__name__)
 

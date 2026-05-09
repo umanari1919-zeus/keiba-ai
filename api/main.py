@@ -9,7 +9,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .routers import pipeline_router, data_router, settings_router, admin_router
 from .routers.ws import router as ws_router
-from .models import ErrorDetail
 
 # FastAPI インスタンス化
 app = FastAPI(
