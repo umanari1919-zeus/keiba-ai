@@ -1,3 +1,4 @@
+import logging
 import time
 import subprocess
 import json
@@ -7,6 +8,8 @@ import os
 import argparse
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
+
+log = logging.getLogger(__name__)
 
 try:
     import schedule
@@ -136,8 +139,8 @@ def _load_paper_state() -> dict:
     if PAPER_TRADE_STATE.exists():
         try:
             return json.loads(PAPER_TRADE_STATE.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("[paper-trade] ステート読み込みエラー: %s", exc)
     state = {"start_date": date.today().isoformat(), "race_days": 0, "total_bets": 0, "active": True}
     PAPER_TRADE_STATE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     return state
