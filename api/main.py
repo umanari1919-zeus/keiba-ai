@@ -3,6 +3,8 @@ FastAPI メインアプリケーション
 
 うまなり地蔵AI REST API バックエンド
 """
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .routers import pipeline_router, data_router, settings_router, admin_router
@@ -16,10 +18,17 @@ app = FastAPI(
     version="2.0.0",
 )
 
-# CORS 設定（localhost・VPN アクセス許可）
+_default_origins = ",".join([
+    "http://localhost:8501",
+    "http://localhost:3000",
+    "http://127.0.0.1:8501",
+    "http://127.0.0.1:3000",
+])
+_allowed_origins = os.getenv("KEIBA_CORS_ORIGINS", _default_origins).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # localhost のみ推奨環境で制限
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

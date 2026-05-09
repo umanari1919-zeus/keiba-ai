@@ -55,7 +55,7 @@ class MonitorAgent(BaseAgent):
         # アラート保存
         today     = datetime.now().strftime("%Y%m%d")
         alert_dir = BASE_DIR / "pipeline_v2" / "alerts"
-        alert_dir.mkdir(exist_ok=True)
+        alert_dir.mkdir(parents=True, exist_ok=True)
         (alert_dir / f"monitor_{today}_{meta.trace_id[:8]}.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
         )
