@@ -48,6 +48,41 @@ def estimate_odds_for_race(race_df):
     est_ninki = (-probs).argsort().argsort() + 1  # 1-indexed rank
     return est_odds_dec, est_ninki
 
+def apply_real_odds(date_str: str) -> int:
+    """odds_snapshot JSON の実オッズを today_entries に反映する。"""
+    import json
+    snapshot_path = os.path.join(DATA_DIR, f"odds_snapshot_{date_str}.json")
+    today_file = os.path.join(DATA_DIR, f"today_entries_{date_str}.csv")
+    if not os.path.exists(snapshot_path) or not os.path.exists(today_file):
+        return 0
+
+    with open(snapshot_path, encoding="utf-8") as f:
+        races = json.load(f)
+
+    df = pd.read_csv(today_file, encoding="utf-8-sig", low_memory=False)
+    updated = 0
+    for race in races:
+        horses = race.get("horses", {})
+        if not horses:
+            continue
+        for bamei, info in horses.items():
+            mask = df["bamei"].astype(str).str.strip() == bamei.strip()
+            if mask.any():
+                tansho = info.get("tansho", 0)
+                ninki = info.get("ninki", 0)
+                if tansho > 0:
+                    df.loc[mask, "tansho_odds"] = int(tansho * 10)
+                    df.loc[mask, "tansho_ninkijun"] = ninki
+                    updated += 1
+
+    if updated > 0:
+        if "market_odds" in df.columns:
+            df = df.drop(columns=["market_odds", "market_ninki"], errors="ignore")
+        df.to_csv(today_file, index=False, encoding="utf-8-sig")
+        print(f"[predict_04] 実オッズ反映: {updated}頭 (market_odds列削除)")
+    return updated
+
+
 KEIBAJO = {
     "1":"札幌","2":"函館","3":"福島","4":"新潟","5":"東京",
     "6":"中山","7":"中京","8":"京都","9":"阪神","10":"小倉",
@@ -370,7 +405,14 @@ def main() -> int:
         print(result)
         return 0
 
-    result = predict_today(args.date)
+    date_str = args.date or datetime.now().strftime("%Y%m%d")
+
+    # 実オッズが取得済みなら反映
+    n_updated = apply_real_odds(date_str)
+    if n_updated > 0:
+        print(f"[predict_04] 実オッズ反映済み → T=1.0で高精度予測")
+
+    result = predict_today(date_str)
     if len(result) > 0:
         print("\n✅ 当日予測が完了しました")
         return 0
