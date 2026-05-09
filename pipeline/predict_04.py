@@ -32,6 +32,56 @@ FEAT_FILE  = CSV_FEATURES
 # 穴馬 30.0倍以上 → tansho_odds >= 300
 MIN_ODDS_RAW  = 100   # 10倍以上（EV分析の最低ライン）
 ANABA_ODDS_RAW = 300  # 30倍以上（穴馬定義）
+JRA_TANSHO_TAKEOUT = 0.20  # JRA単勝控除率
+
+
+def estimate_odds_for_race(race_df):
+    """レース内の win_prob から推定オッズ・推定人気を算出する。
+
+    推定オッズ = (1 - 控除率) / p_normalized
+    p_normalized = win_prob_i / sum(win_prob_j)  (レース内正規化)
+    """
+    probs = race_df["win_prob"].clip(lower=1e-6).values
+    p_norm = probs / probs.sum()
+    est_odds_dec = (1 - JRA_TANSHO_TAKEOUT) / p_norm
+    est_odds_dec = est_odds_dec.round(1)
+    est_ninki = (-probs).argsort().argsort() + 1  # 1-indexed rank
+    return est_odds_dec, est_ninki
+
+def apply_real_odds(date_str: str) -> int:
+    """odds_snapshot JSON の実オッズを today_entries に反映する。"""
+    import json
+    snapshot_path = os.path.join(DATA_DIR, f"odds_snapshot_{date_str}.json")
+    today_file = os.path.join(DATA_DIR, f"today_entries_{date_str}.csv")
+    if not os.path.exists(snapshot_path) or not os.path.exists(today_file):
+        return 0
+
+    with open(snapshot_path, encoding="utf-8") as f:
+        races = json.load(f)
+
+    df = pd.read_csv(today_file, encoding="utf-8-sig", low_memory=False)
+    updated = 0
+    for race in races:
+        horses = race.get("horses", {})
+        if not horses:
+            continue
+        for bamei, info in horses.items():
+            mask = df["bamei"].astype(str).str.strip() == bamei.strip()
+            if mask.any():
+                tansho = info.get("tansho", 0)
+                ninki = info.get("ninki", 0)
+                if tansho > 0:
+                    df.loc[mask, "tansho_odds"] = int(tansho * 10)
+                    df.loc[mask, "tansho_ninkijun"] = ninki
+                    updated += 1
+
+    if updated > 0:
+        if "market_odds" in df.columns:
+            df = df.drop(columns=["market_odds", "market_ninki"], errors="ignore")
+        df.to_csv(today_file, index=False, encoding="utf-8-sig")
+        print(f"[predict_04] 実オッズ反映: {updated}頭 (market_odds列削除)")
+    return updated
+
 
 KEIBAJO = {
     "1":"札幌","2":"函館","3":"福島","4":"新潟","5":"東京",
@@ -149,11 +199,38 @@ def predict_today(date_str: str = None) -> list:
         df["win_prob"] = ensemble_p.max(axis=1)
 
     results = []
+    n_estimated = 0
+    import numpy as np
     for rc, race_df in df.groupby("race_code"):
-        race_df = race_df.sort_values("win_prob", ascending=False)
-        for _, row in race_df.iterrows():
+        race_df = race_df.sort_values("win_prob", ascending=False).copy()
+        has_real_odds = (race_df["tansho_odds"].fillna(0).astype(float) > 0).any()
+
+        raw_probs = race_df["win_prob"].clip(lower=1e-6).values
+        log_probs = np.log(raw_probs)
+        # 推定オッズ時はT=1.8で圧縮、実オッズ時はT=1.0（バックテスト最適値）
+        uses_market_odds = "market_odds" in race_df.columns and (race_df["market_odds"].fillna(0) > 0).any()
+        T = 1.8 if (not has_real_odds or uses_market_odds) else 1.0
+        scaled = np.exp(log_probs / T)
+        norm_probs = (scaled / scaled.sum() * 100).round(1)
+        race_df["win_prob_norm"] = norm_probs
+
+        if not has_real_odds:
+            est_odds, est_ninki = estimate_odds_for_race(race_df)
+            race_df["est_odds_dec"] = est_odds
+            race_df["est_ninki"] = est_ninki
+            n_estimated += 1
+
+        for idx, (_, row) in enumerate(race_df.iterrows()):
             odds_raw = float(row.get("tansho_odds", 0) or 0)
             odds_dec = round(odds_raw / 10, 1)
+            estimated = False
+            if odds_dec == 0 and "est_odds_dec" in race_df.columns:
+                odds_dec = float(row["est_odds_dec"])
+                odds_raw = odds_dec * 10
+                estimated = True
+            ninki = int(row.get("tansho_ninkijun", 0) or 0)
+            if ninki == 0 and "est_ninki" in race_df.columns:
+                ninki = int(row["est_ninki"])
             results.append({
                 "race_code":     str(rc),
                 "race_label":    _fmt_race(str(rc)),
@@ -161,13 +238,18 @@ def predict_today(date_str: str = None) -> list:
                 "bamei":         str(row.get("bamei", "")),
                 "kishumei_ryakusho": str(row.get("kishumei_ryakusho", "")),
                 "pred_chakujun": int(row["pred_chakujun"]),
-                "win_prob":      round(float(row["win_prob"]) * 100, 2),
+                "win_prob":      float(row["win_prob_norm"]),
+                "win_prob_raw":  round(float(row["win_prob"]) * 100, 4),
                 "odds":          odds_dec,
-                "is_anaba":      odds_raw >= ANABA_ODDS_RAW,   # 30倍以上フラグ
+                "odds_estimated": estimated,
+                "ninki":         ninki,
+                "is_anaba":      odds_raw >= ANABA_ODDS_RAW,
                 "barei":         int(row.get("barei", 0) or 0),
                 "bataiju":       int(row.get("bataiju", 0) or 0),
                 "chichi":        str(row.get("chichi", "")),
             })
+    if n_estimated > 0:
+        print(f"[predict_04] 推定オッズ適用: {n_estimated}R (実オッズなし)")
 
     # CSV 保存
     out_path = os.path.join(DATA_DIR, f"predictions_{date_str}.csv")
@@ -176,19 +258,19 @@ def predict_today(date_str: str = None) -> list:
     print(f"[predict_04] 保存: {out_path}")
 
     # 上位予測を表示（穴馬フラグ付き）
-    honmei = df[df["pred_chakujun"] == 1].sort_values("win_prob", ascending=False)
-    anaba_candidates = [r for r in results
-                        if r["pred_chakujun"] == 1 and r["is_anaba"]]
+    res_df = pd.DataFrame(results)
+    honmei = res_df.sort_values("win_prob", ascending=False).drop_duplicates("race_code")
+    anaba_candidates = res_df[res_df["is_anaba"]]
     print(f"\n{'─'*50}")
-    print(f"  本日の本命予測（pred=1着 上位）")
+    print(f"  本日の本命予測（各レース win_prob 1位）")
     print(f"{'─'*50}")
     for _, r in honmei.head(10).iterrows():
-        odds_raw_r = float(r.get("tansho_odds", 0) or 0)
-        anaba_mark = " ★穴" if odds_raw_r >= ANABA_ODDS_RAW else ""
-        print(f"  {_fmt_race(str(r['race_code']))} "
-              f"{int(r.get('umaban',0))}番 {r['bamei']} "
-              f"勝率{r['win_prob']:.1f}% "
-              f"{odds_raw_r/10:.1f}倍{anaba_mark}")
+        est_tag = "≈" if r.get("odds_estimated", False) else ""
+        anaba_mark = " ★穴" if r["is_anaba"] else ""
+        print(f"  {r['race_label']} "
+              f"{int(r['umaban'])}番 {r['bamei']} "
+              f"勝率{r['win_prob']:.2f}% "
+              f"{est_tag}{r['odds']:.1f}倍 {int(r['ninki'])}人気{anaba_mark}")
     print(f"  穴馬候補(30倍以上): {len(anaba_candidates)}頭")
     print(f"{'─'*50}\n")
 
@@ -323,7 +405,14 @@ def main() -> int:
         print(result)
         return 0
 
-    result = predict_today(args.date)
+    date_str = args.date or datetime.now().strftime("%Y%m%d")
+
+    # 実オッズが取得済みなら反映
+    n_updated = apply_real_odds(date_str)
+    if n_updated > 0:
+        print(f"[predict_04] 実オッズ反映済み → T=1.0で高精度予測")
+
+    result = predict_today(date_str)
     if len(result) > 0:
         print("\n✅ 当日予測が完了しました")
         return 0

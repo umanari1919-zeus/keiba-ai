@@ -421,10 +421,21 @@ def run_morning(skip_social=False):
     _safe("auto_learn", run_auto_learn,
           os.path.join(str(BASE_DIR), f"simulation_{year}.csv"))
 
+    # P3: enrich today_entries + market odds (serial, before prediction)
+    today_file = os.path.join(str(DATA_DIR), f"today_entries_{today_str}.csv")
+    if os.path.exists(today_file):
+        print("\n[P3] enrich features + market odds")
+        from pipeline.enrich_today import enrich_today_entries
+        _safe("enrich", enrich_today_entries, today_str)
+
+        odds_model_path = os.path.join(str(BASE_DIR), "odds_model.pkl")
+        if os.path.exists(odds_model_path):
+            from pipeline.odds_model import predict_market_odds
+            _safe("odds_predict", predict_market_odds, today_str)
+
     # P4a: predict (serial)
     print("\n[P4a] predict")
     from pipeline.predict_04 import predict_today, simulate_recovery
-    today_file = os.path.join(str(DATA_DIR), f"today_entries_{today_str}.csv")
     if os.path.exists(today_file):
         print("  today entries found: real prediction mode")
         result = _safe("predict_today", predict_today, today_str)

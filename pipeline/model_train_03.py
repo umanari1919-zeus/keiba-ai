@@ -494,8 +494,7 @@ def train_model():
     print(f"Ensemble : {ensemble_acc:.2%} (logloss={ensemble_logloss:.5f})")
     print(f"{'='*40}")
 
-    model_path = f"{BASE_DIR}/model_v8.pkl"
-    with open(model_path, "wb") as f:
+    with open(MODEL_PATH, "wb") as f:
         pickle.dump({
             'lgb_model': lgb_model,
             'xgb_model': xgb_model,

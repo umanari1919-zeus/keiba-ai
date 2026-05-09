@@ -132,12 +132,32 @@ def calculate_ev(p_win, odds):
     return p_win * odds - 1.0
 
 
+def _estimate_odds_decimal(df):
+    """レース内の win_probability から推定オッズ(decimal)を算出する。"""
+    JRA_TAKEOUT = 0.20
+    out = df['odds_decimal'].copy()
+    for rc, idx in df.groupby('race_code').groups.items():
+        sub = df.loc[idx]
+        if (sub['odds_decimal'] > 0).any():
+            continue
+        probs = sub['win_probability'].clip(lower=1e-6)
+        p_norm = probs / probs.sum()
+        est = ((1 - JRA_TAKEOUT) / p_norm).round(1)
+        out.loc[idx] = est
+    return out
+
+
 def build_ev_dataframe(test_df, ensemble_proba, le):
     win_probs = extract_win_probabilities(ensemble_proba, le)
     result = test_df.copy()
     result['win_probability'] = win_probs
     result['odds_decimal'] = pd.to_numeric(
         result['tansho_odds'], errors='coerce').fillna(0) / 10
+    n_zero = (result['odds_decimal'] == 0).sum()
+    if n_zero > 0:
+        result['odds_decimal'] = _estimate_odds_decimal(result)
+        result['odds_estimated'] = result['tansho_odds'].fillna(0).astype(float) == 0
+        print(f"  [EV] 推定オッズ適用: {n_zero}頭 (実オッズなし)")
     # 基本EV
     result['expected_value'] = (
         result['win_probability'] * result['odds_decimal'] - 1.0
@@ -279,6 +299,66 @@ def run_ev_analysis(year=2025, threshold=EV_THRESHOLD):
     return positive_ev
 
 
+def run_ev_today(date_str: str = None, threshold=EV_THRESHOLD):
+    """当日の predictions CSV から EV を計算して ev_today_YYYYMMDD.csv を出力する。"""
+    if pd is None:
+        print("[EV] pandas が未インストールです")
+        return pd.DataFrame() if pd else []
+    if date_str is None:
+        date_str = datetime.now().strftime("%Y%m%d")
+    pred_path = os.path.join(DATA_DIR, f"predictions_{date_str}.csv")
+    if not os.path.exists(pred_path):
+        print(f"[EV] predictions_{date_str}.csv なし")
+        return pd.DataFrame()
+
+    df = pd.read_csv(pred_path, encoding="utf-8-sig", low_memory=False)
+    if 'win_prob' not in df.columns or 'odds' not in df.columns:
+        print("[EV] win_prob / odds カラムなし")
+        return pd.DataFrame()
+
+    df['win_probability'] = df['win_prob'] / 100.0
+    df['odds_decimal'] = df['odds']
+    df['expected_value'] = df['win_probability'] * df['odds_decimal'] - 1.0
+
+    boost_map = _load_ev_boost_map()
+    if boost_map:
+        df['expected_value'] = df.apply(
+            lambda r: _apply_ev_boost(r, r['expected_value']), axis=1
+        )
+
+    df['ev_threshold'] = df.apply(_get_ev_threshold, axis=1)
+    df['race_type'] = df.apply(_get_race_type, axis=1)
+
+    positive = filter_positive_ev(df, threshold)
+
+    est_tag = ""
+    if 'odds_estimated' in df.columns and df['odds_estimated'].any():
+        est_tag = " (推定オッズ使用)"
+
+    sep = "=" * 55
+    print(f"\n{sep}")
+    print(f"[EV] {date_str} 当日 期待値分析{est_tag}")
+    print(sep)
+    print(f"全馬数        : {len(df):,}頭")
+    print(f"EV+選抜レース : {len(positive):,}R")
+    if len(positive) > 0:
+        print(f"\n『期待値TOP10』")
+        for _, r in positive.head(10).iterrows():
+            est = "≈" if r.get('odds_estimated', False) else ""
+            print(f"  {r.get('race_label','')} "
+                  f"{int(r.get('umaban',0))}番 {r.get('bamei','')} "
+                  f"EV={r['expected_value']:+.1%} "
+                  f"{est}{r['odds_decimal']:.1f}倍 "
+                  f"勝率{r['win_probability']:.3%}")
+    else:
+        print("  EV+候補なし")
+
+    out_path = os.path.join(DATA_DIR, f"ev_today_{date_str}.csv")
+    positive.to_csv(out_path, index=False, encoding="utf-8-sig")
+    print(f"\n[EV] 保存: {out_path}")
+    return positive
+
+
 def check_runtime() -> list[str]:
     issues = []
     if pd is None:
@@ -295,6 +375,7 @@ def check_runtime() -> list[str]:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="期待値計算エンジン")
     parser.add_argument("--year", type=int, default=2025)
+    parser.add_argument("--date", default=None, help="当日EV分析 YYYYMMDD")
     parser.add_argument("--dry-run", action="store_true", help="依存関係と入力ファイルだけ確認する")
     args, _ = parser.parse_known_args()
 
@@ -308,7 +389,10 @@ if __name__ == "__main__":
             print("[EV] dry-run: 実行要件は概ね満たしています")
         raise SystemExit(0)
 
-    result = run_ev_analysis(args.year)
+    if args.date:
+        result = run_ev_today(args.date)
+    else:
+        result = run_ev_analysis(args.year)
     if hasattr(result, "__len__") and len(result) > 0:
         print("\n『期待値TOP10』")
         cols = ['race_code', 'bamei', 'win_probability',

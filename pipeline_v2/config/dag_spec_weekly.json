@@ -22,6 +22,12 @@
       "depends_on": ["weekly_train"]
     },
     {
+      "id": "odds_model_train",
+      "script": "pipeline_v2/23_odds_model_train.py",
+      "description": "市場オッズ予測モデル再学習",
+      "depends_on": ["weekly_train"]
+    },
+    {
       "id": "backtest_engine",
       "script": "pipeline_v2/21_backtest_engine.py",
       "description": "EV×Kelly グリッドサーチで運用閾値を点検",
