@@ -93,6 +93,21 @@ def _load_picks(date_str: str = None) -> dict:
         return json.load(f)
 
 
+def _kelly_bet(wp: float, odds: float, bankroll: float,
+               fraction: float = 0.10) -> int:
+    """Kelly criterion bet size (fractional Kelly)."""
+    if odds <= 1 or wp <= 0:
+        return 0
+    b = odds - 1
+    q = 1 - wp
+    edge = wp * b - q
+    if edge <= 0:
+        return 0
+    kelly = edge / b
+    bet = int(bankroll * kelly * fraction)
+    return max(0, min(bet, int(bankroll * 0.05)))
+
+
 def _load_predictions_csv(date_str: str) -> list:
     """predictions_{date}.csv からレースごとの本命馬を読み込む。"""
     path = os.path.join(DATA_DIR, f"predictions_{date_str}.csv")
@@ -106,11 +121,14 @@ def _load_predictions_csv(date_str: str) -> list:
                  .drop_duplicates('race_code')
                  .sort_values('win_prob', ascending=False)
                  .head(20))
+        bkroll = _load_bankroll()
+        current = bkroll.get("current", 10000)
         records = []
         for _, row in top.iterrows():
             odds = float(row.get("odds", 0))
-            wp = float(row.get("win_prob", 0)) / 100.0  # win_prob is in % (e.g. 13.2 = 13.2%)
+            wp = float(row.get("win_prob", 0)) / 100.0
             ev = wp * odds - 1.0 if odds > 0 else 0
+            kb = _kelly_bet(wp, odds, current) if ev > 0.15 else 0
             records.append({
                 "race_code":       str(row.get("race_code", "")),
                 "bamei":           str(row.get("bamei", "")),
@@ -122,7 +140,7 @@ def _load_predictions_csv(date_str: str) -> list:
                 "win_probability": wp,
                 "expected_value":  ev,
                 "race_type":       "default",
-                "kelly_bet":       0,
+                "kelly_bet":       kb,
                 "ticket_type":     "単勝",
                 "comment":         f"推定{int(row.get('ninki',0))}人気" if row.get("odds_estimated") else "",
             })
