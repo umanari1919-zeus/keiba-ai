@@ -4,12 +4,15 @@
 - 参戦価値スコアで全レースをランキング
 - Grade S/A/B/C で参戦優先度を可視化
 """
+import logging
 import numpy as np
 import pandas as pd
 from scipy.stats import entropy as scipy_entropy
 from typing import List, Dict
 import json, os
 from datetime import datetime
+
+log = logging.getLogger(__name__)
 
 BASE_DIR = "D:\\keiba_ai"
 
@@ -172,38 +175,34 @@ def rank_races(df: pd.DataFrame, year: int) -> pd.DataFrame:
 
 def run_race_selector(year: int = None) -> dict:
     year = year or datetime.now().year
-    print("\n" + "="*55)
-    print("🏇 レース価値スコアリングシステム")
-    print("="*55)
+    log.info("レース価値スコアリングシステム 開始")
 
     feat_path = f"{BASE_DIR}\\keiba_data_features.csv"
     if not os.path.exists(feat_path):
-        print("  ⚠️ 特徴量ファイルなし")
+        log.warning("特徴量ファイルなし: %s", feat_path)
         return {}
 
     df = pd.read_csv(feat_path, encoding='utf-8-sig', low_memory=False, on_bad_lines='skip')
     ranked = rank_races(df, year)
 
     if ranked.empty:
-        print("  ⚠️ ランキング生成失敗")
+        log.warning("ランキング生成失敗")
         return {}
 
-    print(f"  📊 分析レース数: {len(ranked):,}R")
+    log.info("分析レース数: %d R", len(ranked))
 
     grade_dist = ranked['grade'].value_counts()
     for g in ['S', 'A', 'B', 'C']:
         cnt = int(grade_dist.get(g, 0))
-        bar = '█' * min(cnt * 30 // max(len(ranked), 1), 30)
-        print(f"  Grade {g}: {cnt:4d}R {bar}")
+        log.info("Grade %s: %4d R", g, cnt)
 
     top = ranked[ranked['grade'].isin(['S', 'A'])].head(10)
     if not top.empty:
-        print(f"\n  🔥 参戦推奨レース TOP{len(top)}:")
+        log.info("参戦推奨レース TOP%d:", len(top))
         for _, r in top.iterrows():
-            print(f"    [{r['grade']}] {r['race_code']} "
-                  f"({r['n_horses']}頭) "
-                  f"荒れ={r['upset_score']:.2f} 価値={r['value_score']:.3f} "
-                  f"オッズ{r['fav_odds']:.1f}〜{r['max_odds']:.1f}倍")
+            log.info("  [%s] %s (%d頭) 荒れ=%.2f 価値=%.3f オッズ%.1f〜%.1f倍",
+                     r['grade'], r['race_code'], r['n_horses'],
+                     r['upset_score'], r['value_score'], r['fav_odds'], r['max_odds'])
 
     os.makedirs(f"{BASE_DIR}\\data", exist_ok=True)
     ranked.to_csv(f"{BASE_DIR}\\data\\race_ranking_{year}.csv",
@@ -211,7 +210,7 @@ def run_race_selector(year: int = None) -> dict:
     with open(f"{BASE_DIR}\\data\\race_selector_{year}.json", 'w', encoding='utf-8') as f:
         json.dump(ranked.head(50).to_dict('records'), f,
                   ensure_ascii=False, indent=2, default=str)
-    print(f"\n  💾 保存: data/race_ranking_{year}.csv")
+    log.info("保存: data/race_ranking_%d.csv", year)
 
     return {
         'total_races': len(ranked),

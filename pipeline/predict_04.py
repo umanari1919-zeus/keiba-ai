@@ -1,9 +1,12 @@
+import logging
 import pandas as pd
 import numpy as np
 import pickle
 import os
 from datetime import datetime
 from pipeline.ensemble_utils import load_ensemble_weights
+
+log = logging.getLogger(__name__)
 
 BASE_DIR  = "D:\\keiba_ai"
 DATA_DIR  = os.path.join(BASE_DIR, "data")
@@ -59,8 +62,8 @@ def predict_today(date_str: str = None) -> list:
 
     today_file = os.path.join(DATA_DIR, f"today_entries_{date_str}.csv")
     if not os.path.exists(today_file):
-        print(f"[predict_04] 当日出馬表なし: {today_file}")
-        print(f"[predict_04] pipeline/shutsuba_fetch.py を先に実行してください")
+        log.warning("[predict_04] 当日出馬表なし: %s", today_file)
+        log.warning("[predict_04] pipeline/shutsuba_fetch.py を先に実行してください")
         return []
 
     saved    = _load_model()
@@ -73,13 +76,13 @@ def predict_today(date_str: str = None) -> list:
 
     df = pd.read_csv(today_file, encoding="utf-8-sig", low_memory=False)
     df = df.fillna(0)
-    print(f"[predict_04] 当日出馬表: {len(df)}頭 {df['race_code'].nunique()}R")
+    log.info("[predict_04] 当日出馬表: %d頭 %dR", len(df), df['race_code'].nunique())
 
     # モデルが必要とする特徴量のうち存在するものだけ使用
     feats = [f for f in features if f in df.columns]
     missing = [f for f in features if f not in df.columns]
     if missing:
-        print(f"[predict_04] 不足特徴量 {len(missing)}件 → 0埋め")
+        log.warning("[predict_04] 不足特徴量 %d件 → 0埋め", len(missing))
         for f in missing:
             df[f] = 0
 
@@ -130,25 +133,21 @@ def predict_today(date_str: str = None) -> list:
     # CSV 保存
     out_path = os.path.join(DATA_DIR, f"predictions_{date_str}.csv")
     pd.DataFrame(results).to_csv(out_path, index=False, encoding="utf-8-sig")
-    print(f"[predict_04] 予測完了: {df['race_code'].nunique()}R {len(results)}頭")
-    print(f"[predict_04] 保存: {out_path}")
+    log.info("[predict_04] 予測完了: %dR %d頭", df['race_code'].nunique(), len(results))
+    log.info("[predict_04] 保存: %s", out_path)
 
     # 上位予測を表示（穴馬フラグ付き）
     honmei = df[df["pred_chakujun"] == 1].sort_values("win_prob", ascending=False)
     anaba_candidates = [r for r in results
                         if r["pred_chakujun"] == 1 and r["is_anaba"]]
-    print(f"\n{'─'*50}")
-    print(f"  本日の本命予測（pred=1着 上位）")
-    print(f"{'─'*50}")
+    log.info("本日の本命予測（pred=1着 上位）")
     for _, r in honmei.head(10).iterrows():
         odds_raw_r = float(r.get("tansho_odds", 0) or 0)
         anaba_mark = " ★穴" if odds_raw_r >= ANABA_ODDS_RAW else ""
-        print(f"  {_fmt_race(str(r['race_code']))} "
-              f"{int(r.get('umaban',0))}番 {r['bamei']} "
-              f"勝率{r['win_prob']:.1f}% "
-              f"{odds_raw_r/10:.1f}倍{anaba_mark}")
-    print(f"  穴馬候補(30倍以上): {len(anaba_candidates)}頭")
-    print(f"{'─'*50}\n")
+        log.info("  %s %d番 %s 勝率%.1f%% %.1f倍%s",
+                 _fmt_race(str(r['race_code'])), int(r.get('umaban', 0)),
+                 r['bamei'], r['win_prob'], odds_raw_r / 10, anaba_mark)
+    log.info("穴馬候補(30倍以上): %d頭", len(anaba_candidates))
 
     return results
 
@@ -238,7 +237,7 @@ def simulate_recovery(year):
     if year == 2025:
         sim_path = os.path.join(BASE_DIR, "simulation_2025.csv")
         results_df.to_csv(sim_path, index=False, encoding="utf-8-sig")
-        print(f"💾 {sim_path} に保存しました！")
+        log.info("保存: %s", sim_path)
     
     return {
         'year': year,

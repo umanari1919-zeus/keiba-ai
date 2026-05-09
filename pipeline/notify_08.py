@@ -13,6 +13,9 @@ except ImportError:
 from datetime import datetime, timedelta
 
 from pipeline.config import BASE_DIR as BASE, DB_CONFIG
+import logging
+
+log = logging.getLogger(__name__)
 
 _JYO = {
     '01':'札幌','02':'函館','03':'福島','04':'新潟','05':'東京',
@@ -49,7 +52,7 @@ def send_notify(subject, body):
     notify_to = os.getenv("NOTIFY_TO")
     
     if not all([gmail_address, gmail_password, notify_to]):
-        print("⚠️ .envファイルを確認してください")
+        log.warning(".envファイルを確認してください")
         return False
     
     try:
@@ -63,11 +66,11 @@ def send_notify(subject, body):
             smtp.login(gmail_address, gmail_password)
             smtp.send_message(msg)
         
-        print("✅ Gmail通知送信完了！")
+        log.info("Gmail通知送信完了")
         return True
-        
+
     except Exception as e:
-        print(f"❌ 送信失敗：{e}")
+        log.warning("送信失敗：%s", e)
         return False
 
 # ─────────────────────────────────────────────
@@ -434,5 +437,5 @@ Gmail通知の設定が完了しました🎉
     return send_notify(subject, body)
 
 if __name__ == "__main__":
-    print("📧 テスト通知を送信します...")
+    log.info("テスト通知を送信します...")
     send_test()

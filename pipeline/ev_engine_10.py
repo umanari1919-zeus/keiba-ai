@@ -1,10 +1,13 @@
 import json
+import logging
 import pandas as pd
 import numpy as np
 import pickle
 import os
 from datetime import datetime
 from pipeline.ensemble_utils import load_ensemble_weights
+
+log = logging.getLogger(__name__)
 
 EV_THRESHOLD = 0.15
 MIN_ODDS     = 10.0
@@ -128,7 +131,7 @@ def build_ev_dataframe(test_df, ensemble_proba, le):
         result['expected_value'] = result.apply(
             lambda r: _apply_ev_boost(r, r['expected_value']), axis=1
         )
-        print(f"  [EV] knowledge_base boost 適用 ({len(boost_map)}件)")
+        log.info("  [EV] knowledge_base boost 適用 (%d件)", len(boost_map))
     # レース種別EV閾値カラム（filter で使用）
     result['ev_threshold'] = result.apply(_get_ev_threshold, axis=1)
     # レース種別フラグ
@@ -161,7 +164,7 @@ def filter_positive_ev(df, threshold=EV_THRESHOLD, min_odds=MIN_ODDS):
 
 
 def run_ev_analysis(year=2025, threshold=EV_THRESHOLD):
-    print(f"[EV] {datetime.now()} 期待値計算エンジン起動...")
+    log.info("[EV] %s 期待値計算エンジン起動...", datetime.now())
 
     if not os.path.exists(MODEL_PATH):
         raise FileNotFoundError(
@@ -196,12 +199,12 @@ def run_ev_analysis(year=2025, threshold=EV_THRESHOLD):
     test_df = df[df['kaisai_nen'] == year].copy()
 
     if len(test_df) == 0:
-        print(f"[EV] {year}年のデータがありません")
+        log.warning("[EV] %d年のデータがありません", year)
         return pd.DataFrame()
 
     missing_feats = [feat for feat in features if feat not in test_df.columns]
     if missing_feats:
-        print(f"[EV] 不足特徴量 {len(missing_feats)}件 -> 0埋め")
+        log.warning("[EV] 不足特徴量 %d件 -> 0埋め", len(missing_feats))
         for feat in missing_feats:
             test_df[feat] = 0
 
@@ -248,7 +251,7 @@ def run_ev_analysis(year=2025, threshold=EV_THRESHOLD):
 
     out_path = os.path.join(BASE_DIR, f"ev_analysis_{year}.csv")
     positive_ev.to_csv(out_path, index=False, encoding="utf-8-sig")
-    print(f"\n[EV] 保存完了: {out_path}")
+    log.info("[EV] 保存完了: %s", out_path)
 
     return positive_ev
 
