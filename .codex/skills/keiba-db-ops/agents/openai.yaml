@@ -1,0 +1,3 @@
+interface:
+  display_name: "Keiba DB Ops"
+  short_description: "Inspect and optimize PostgreSQL for feature generation and pipeline reliability."

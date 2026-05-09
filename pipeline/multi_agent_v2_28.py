@@ -39,6 +39,8 @@ if _BASE not in sys.path:
 
 import pandas as pd
 import numpy as np
+from pipeline.config import BASE_DIR, CSV_FEATURES, CSV_RAW, DATA_DIR, PEDIGREE_OUTPUT_DIR
+from pipeline.native_runtime import ensure_native_runtime
 
 from langgraph.graph import StateGraph, END
 from langgraph.types import Send
@@ -47,11 +49,11 @@ from langgraph.types import Send
 # 設定
 # ─────────────────────────────────────────────────────────────
 
-BASE_DIR    = "D:\\keiba_ai"
-DATA_DIR    = f"{BASE_DIR}\\data"
-MODEL_FILE  = f"{BASE_DIR}\\model_v8.pkl"
-FEAT_FILE   = f"{BASE_DIR}\\keiba_data_features.csv"
-RAW_FILE    = f"{BASE_DIR}\\keiba_data.csv"
+ensure_native_runtime()
+
+MODEL_FILE  = os.path.join(BASE_DIR, "model_v8.pkl")
+FEAT_FILE   = CSV_FEATURES
+RAW_FILE    = CSV_RAW
 
 EV_THRESHOLD   = 0.15
 MIN_ODDS       = 10.0
@@ -130,7 +132,7 @@ def _ts() -> str:
 
 
 def _load_bankroll() -> float:
-    path = f"{BASE_DIR}\\data\\bankroll.json"
+    path = os.path.join(DATA_DIR, "bankroll.json")
     if not os.path.exists(path):
         return 100_000.0
     with open(path, encoding="utf-8") as f:
@@ -196,7 +198,7 @@ def blood_agent(state: AgentState) -> AgentState:
 
     results: List[Dict] = []
     try:
-        nicks_path = f"{BASE_DIR}\\pedigree_output\\nicks_feature.csv"
+        nicks_path = os.path.join(PEDIGREE_OUTPUT_DIR, "nicks_feature.csv")
         if not os.path.exists(nicks_path):
             log.append(f"{tag} nicks_feature.csv なし（スキップ）")
             return {**state, "blood_results": [], "log": log}
@@ -467,7 +469,7 @@ def odds_signal_agent(state: AgentState) -> AgentState:
 
     signals: List[Dict] = []
     try:
-        data_dir  = f"{BASE_DIR}\\data"
+        data_dir = DATA_DIR
         date_str  = datetime.now().strftime('%Y%m%d')
         snap_path = f"{data_dir}\\odds_snapshot_{date_str}.json"
 
@@ -601,7 +603,7 @@ def ml_ensemble_agent(state: AgentState) -> AgentState:
         cb_p  = (cb_model.predict_proba(X) if cb_model is not None else 0)
 
         # NN モデルがあれば追加
-        nn_path = f"{BASE_DIR}\\model_nn.pth"
+        nn_path = os.path.join(BASE_DIR, "model_nn.pth")
         if os.path.exists(nn_path):
             try:
                 import torch
@@ -814,7 +816,7 @@ def ev_agent(state: AgentState) -> AgentState:
 
         # レース価値スコアをロード（race_selector_31 の出力）
         race_scores: Dict[str, float] = {}
-        rs_path = f"{BASE_DIR}\\data\\race_selector_{state.get('year', 2026)}.json"
+        rs_path = os.path.join(DATA_DIR, f"race_selector_{state.get('year', 2026)}.json")
         if os.path.exists(rs_path):
             with open(rs_path, encoding='utf-8') as f:
                 rs_data = json.load(f)
@@ -1367,7 +1369,7 @@ def publisher_agent(state: AgentState) -> AgentState:
         post_text = "\n".join(lines)
 
     # JSON 保存
-    out_path = f"{BASE_DIR}\\agent_picks_{now.strftime('%Y%m%d')}.json"
+    out_path = os.path.join(BASE_DIR, f"agent_picks_{now.strftime('%Y%m%d')}.json")
     payload = {
         "generated_at":   now.isoformat(),
         "approved_bets":  approved,

@@ -7,6 +7,12 @@ Neural Network (PyTorch) + Stacking メタ学習
 import pandas as pd
 import numpy as np
 import pickle
+import os
+from pipeline.config import BASE_DIR, CSV_FEATURES
+from pipeline.native_runtime import ensure_native_runtime
+
+ensure_native_runtime()
+
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import accuracy_score
@@ -18,9 +24,9 @@ from torch.utils.data import DataLoader, TensorDataset
 import lightgbm as lgb
 from datetime import datetime
 
-MODEL_FILE    = "D:\\keiba_ai\\model_v8.pkl"
-STACKED_FILE  = "D:\\keiba_ai\\model_stacked.pkl"
-NN_FILE       = "D:\\keiba_ai\\model_nn.pth"
+MODEL_FILE    = os.path.join(BASE_DIR, "model_v8.pkl")
+STACKED_FILE  = os.path.join(BASE_DIR, "model_stacked.pkl")
+NN_FILE       = os.path.join(BASE_DIR, "model_nn.pth")
 
 
 # ──────────────────────────────────────────────
@@ -180,7 +186,7 @@ def train_nn_stacking():
     le        = saved['le']
     features  = saved['features']
 
-    df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df = pd.read_csv(CSV_FEATURES,
                      encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     df = df.fillna(0)
     feats = [f for f in features if f in df.columns]

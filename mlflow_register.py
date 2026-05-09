@@ -4,13 +4,13 @@ mlflow_register.py — MLflow 実験トラッキング & モデルレジスト�
 
 使い方:
   # model_train_03.py から自動呼び出し（train_model() 終了時）
-  python mlflow_register.py D:\\keiba_ai\\model_v8.pkl
+  python mlflow_register.py <KEIBA_BASE>/model_v8.pkl
 
   # 手動でメトリクスを確認
   python mlflow_register.py --list
 
   # MLflow UI 起動
-  mlflow ui --backend-store-uri file:///D:/keiba_ai/mlflow_tracking
+  mlflow ui --backend-store-uri file:///<KEIBA_BASE>/mlflow_tracking
 """
 
 from __future__ import annotations
@@ -22,9 +22,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from pipeline.config import BASE_DIR
+
+BASE_PATH = Path(BASE_DIR)
 TRACKING_URI = os.getenv(
     "MLFLOW_TRACKING_URI",
-    f"file:///{Path(os.getenv('KEIBA_BASE', 'D:/keiba_ai')).as_posix()}/mlflow_tracking",
+    f"file:///{BASE_PATH.as_posix()}/mlflow_tracking",
 )
 EXPERIMENT_NAME = "umanari-ensemble"
 MODEL_NAME = "umanari-model"
@@ -147,7 +150,7 @@ if __name__ == "__main__":
     elif len(sys.argv) > 1:
         register_model(sys.argv[1])
     else:
-        default_path = Path(os.getenv("KEIBA_BASE", "D:/keiba_ai")) / "model_v8.pkl"
+        default_path = BASE_PATH / "model_v8.pkl"
         if default_path.exists():
             register_model(str(default_path))
         else:

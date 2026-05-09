@@ -12,6 +12,8 @@ import numpy as np
 from datetime import datetime
 from typing import TypedDict, Annotated, List, Dict, Any, Optional
 import operator
+from pipeline.config import BASE_DIR, CSV_FEATURES, CSV_RAW, DATA_DIR
+from pipeline.native_runtime import ensure_native_runtime
 
 # LangGraph インポート（未インストール時は明示エラー）
 try:
@@ -65,8 +67,8 @@ def data_collector_agent(state: AgentState) -> AgentState:
     log = [f"{tag} 起動 {datetime.now().strftime('%H:%M:%S')}"]
 
     year = state.get('year', datetime.now().year)
-    raw_path  = "D:\\keiba_ai\\keiba_data.csv"
-    feat_path = "D:\\keiba_ai\\keiba_data_features.csv"
+    raw_path  = CSV_RAW
+    feat_path = CSV_FEATURES
 
     try:
         # ファイル存在確認（当日更新済みならスキップ）
@@ -124,7 +126,8 @@ def analyzer_agent(state: AgentState) -> AgentState:
                 'ev_analysis': [], 'errors': [err], 'log': log}
 
     try:
-        with open("D:\\keiba_ai\\model_v8.pkl", "rb") as f:
+        ensure_native_runtime()
+        with open(os.path.join(BASE_DIR, "model_v8.pkl"), "rb") as f:
             saved = pickle.load(f)
 
         lgb_model = saved['lgb_model']
@@ -351,7 +354,7 @@ def publisher_agent(state: AgentState) -> AgentState:
     post_text = "\n".join(lines)
 
     # 結果を保存
-    out_path = f"D:\\keiba_ai\\agent_picks_{now.strftime('%Y%m%d')}.json"
+    out_path = os.path.join(DATA_DIR, f"agent_picks_{now.strftime('%Y%m%d')}.json")
     try:
         with open(out_path, 'w', encoding='utf-8') as f:
             json.dump({

@@ -11,10 +11,12 @@ Write-Host ""
 Write-Host "📍 Step 1: PATH 環境変数設定" -ForegroundColor Magenta
 Write-Host "─────────────────────────────────────────────" -ForegroundColor Gray
 
-$npmPath = "C:\Users\uchih\AppData\Roaming\npm"
+$npmPath = if ($env:APPDATA) { Join-Path $env:APPDATA "npm" } else { "" }
 $currentPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
 
-if ($currentPath -like "*npm*") {
+if (-not $npmPath) {
+    Write-Host "⚠️  APPDATA が未設定です。npm のグローバル bin パスを手動確認してください" -ForegroundColor Yellow
+} elseif ($currentPath -like "*$npmPath*") {
     Write-Host "✅ PATH に npm bin ディレクトリが既に設定されています" -ForegroundColor Green
 } else {
     Write-Host "⏳ PATH に npm bin ディレクトリを追加中..." -ForegroundColor Yellow

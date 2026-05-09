@@ -22,10 +22,11 @@ import os
 import pathlib
 from typing import Any
 
+from .path_config import BASE_DIR, DATA_DIR
+
 log = logging.getLogger(__name__)
 
-BASE_DIR   = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-STORE_DIR  = BASE_DIR / "data" / "rag_store"
+STORE_DIR  = DATA_DIR / "rag_store"
 STORE_DIR.mkdir(parents=True, exist_ok=True)
 
 COLLECTION_NAME = "umanari_horses"
@@ -65,8 +66,8 @@ def embed_horse(features: dict) -> list[float]:
     """
     # 数値特徴量を正規化して固定長ベクトル化
     keys = [
-        "win_prob", "place_prob", "expected_return", "uncertainty",
-        "odds", "win_rate", "place_rate", "past3_avg_chakujun",
+        "win_prob", "place_prob", "uncertainty",
+        "win_rate", "place_rate", "past3_avg_chakujun",
         "nick_index", "futan_juryo", "bataiju", "kyori",
         "sire_win_rate", "sire_roi", "bms_win_rate",
         "debut_score", "shogai_score", "training_speed_zscore",
@@ -152,7 +153,9 @@ class RAGStore:
 
     def add(self, horse_id: str, features: dict, metadata: dict | None = None) -> None:
         vec = embed_horse(features)
-        meta = {**(metadata or {}), "horse_id": horse_id}
+        meta = dict(metadata or {})
+        meta.setdefault("horse_id", horse_id)
+        meta["doc_id"] = horse_id
 
         if self._backend == "chromadb":
             self._col.upsert(
@@ -165,13 +168,75 @@ class RAGStore:
             import numpy as np
             arr = np.array([vec], dtype=np.float32)
             self._faiss_index.add(arr)
-            self._faiss_meta.append({"horse_id": horse_id, **meta})
+            self._faiss_meta.append(meta)
             self._save_faiss()
 
         else:  # json
             record = {"horse_id": horse_id, "vector": vec, "meta": meta}
             with open(self._json_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    def existing_ids(self) -> set[str]:
+        """既存 document ID を返す。JSON フォールバックの日次重複防止に使う。"""
+        if self._backend == "chromadb":
+            try:
+                return set(self._col.get(include=[])["ids"])
+            except Exception:
+                return set()
+
+        if self._backend == "faiss":
+            return {
+                str(meta.get("doc_id") or meta.get("horse_id"))
+                for meta in self._faiss_meta
+                if meta.get("doc_id") or meta.get("horse_id")
+            }
+
+        if not self._json_path.exists():
+            return set()
+        ids: set[str] = set()
+        with open(self._json_path, encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                doc_id = record.get("horse_id") or record.get("meta", {}).get("doc_id")
+                if doc_id:
+                    ids.add(str(doc_id))
+        return ids
+
+    def clear(self) -> None:
+        """現在の collection を空にする。週次 rebuild 用。"""
+        if self._backend == "chromadb":
+            try:
+                self._client.delete_collection(self.collection)
+            except Exception:
+                pass
+            self._col = self._client.get_or_create_collection(
+                name=self.collection,
+                metadata={"hnsw:space": "cosine"},
+            )
+
+        elif self._backend == "faiss":
+            import faiss
+            self._faiss_index = faiss.IndexFlatL2(EMBED_DIM)
+            self._faiss_meta = []
+            for path in [
+                STORE_DIR / f"{self.collection}.faiss",
+                STORE_DIR / f"{self.collection}_meta.json",
+            ]:
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+
+        else:  # json
+            try:
+                self._json_path.unlink()
+            except FileNotFoundError:
+                pass
 
     # ------------------------------------------------------------------ #
     # 検索
@@ -188,10 +253,12 @@ class RAGStore:
             results = self._col.query(query_embeddings=[vec], n_results=top_k)
             hits = []
             for i, hid in enumerate(results["ids"][0]):
+                meta = results["metadatas"][0][i] or {}
                 hits.append({
-                    "horse_id": hid,
+                    "horse_id": meta.get("horse_id", hid),
+                    "doc_id":   hid,
                     "score":    1.0 - results["distances"][0][i],
-                    "meta":     results["metadatas"][0][i],
+                    "meta":     meta,
                 })
             return hits
 
@@ -206,6 +273,7 @@ class RAGStore:
                 meta = self._faiss_meta[idx]
                 hits.append({
                     "horse_id": meta.get("horse_id", str(idx)),
+                    "doc_id":   meta.get("doc_id", str(idx)),
                     "score":    float(1.0 / (1.0 + dist)),
                     "meta":     meta,
                 })
@@ -217,24 +285,40 @@ class RAGStore:
     def _json_search(self, query_vec: list[float], top_k: int) -> list[dict]:
         if not self._json_path.exists():
             return []
-        records = []
+        if top_k <= 0:
+            return []
+        import heapq
+
+        max_scan = int(os.getenv("KEIBA_RAG_SEARCH_LIMIT", "20000"))
+        heap: list[tuple[float, int, dict]] = []
+        scanned = 0
         with open(self._json_path, encoding="utf-8") as f:
-            for line in f:
+            for idx, line in enumerate(f):
+                if max_scan > 0 and scanned >= max_scan:
+                    break
                 line = line.strip()
                 if not line:
                     continue
                 try:
-                    records.append(json.loads(line))
+                    record = json.loads(line)
                 except Exception:
-                    pass
+                    continue
+                scanned += 1
+                sim = cosine_similarity(query_vec, record.get("vector", []))
+                meta = record.get("meta", {})
+                doc_id = meta.get("doc_id") or record.get("horse_id", "")
+                item = {
+                    "horse_id": meta.get("horse_id") or record.get("horse_id", ""),
+                    "doc_id": doc_id,
+                    "score": sim,
+                    "meta": meta,
+                }
+                if len(heap) < top_k:
+                    heapq.heappush(heap, (sim, idx, item))
+                elif sim > heap[0][0]:
+                    heapq.heapreplace(heap, (sim, idx, item))
 
-        scored = []
-        for r in records:
-            sim = cosine_similarity(query_vec, r.get("vector", []))
-            scored.append({"horse_id": r["horse_id"], "score": sim, "meta": r.get("meta", {})})
-
-        scored.sort(key=lambda x: x["score"], reverse=True)
-        return scored[:top_k]
+        return [item for _, _, item in sorted(heap, key=lambda x: x[0], reverse=True)]
 
     # ------------------------------------------------------------------ #
     # ユーティリティ
@@ -274,11 +358,24 @@ class RAGStore:
             log.warning("馬IDカラムが見つかりません")
             return 0
 
+        existing_ids = self.existing_ids()
         count = 0
-        for _, row in df.iterrows():
+        for row_index, row in df.iterrows():
             horse_id = str(row[id_col])
+            race_code = str(row.get("race_code", ""))
+            umaban = str(row.get("umaban", ""))
+            doc_id = f"row:{int(row_index)}:race:{race_code}:horse:{horse_id}:umaban:{umaban}"
+            if doc_id in existing_ids:
+                continue
             features = row.to_dict()
-            self.add(horse_id, features, metadata={"source": "features_csv"})
+            self.add(doc_id, features, metadata={
+                "source": "features_csv",
+                "horse_id": horse_id,
+                "race_code": race_code,
+                "umaban": umaban,
+                "row_index": int(row_index),
+            })
+            existing_ids.add(doc_id)
             count += 1
 
         log.info("RAGStore.build_from_features_csv: %d 件追加", count)

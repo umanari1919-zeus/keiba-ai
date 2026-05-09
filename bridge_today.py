@@ -3,17 +3,31 @@ bridge_today.py
 今日のDBデータをexplainに流すブリッジスクリプト
 predictions テーブルがない場合でも直接LLMに投げて結果を保存します
 """
-import psycopg2, json, uuid, logging, sys, pathlib, urllib.request
+import argparse
+import importlib.util
+import json
+import logging
+import pathlib
+import sys
+import urllib.request
+import uuid
 from datetime import datetime
 
-BASE=pathlib.Path(r"D:\keiba_ai\pipeline_v2")
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from pipeline.config import BASE_DIR as CONFIG_BASE_DIR, DB_CONFIG as CONFIG_DB_CONFIG
+
+BASE=pathlib.Path(CONFIG_BASE_DIR) / "pipeline_v2"
 (BASE/"logs").mkdir(exist_ok=True)
 today=datetime.now().strftime("%Y%m%d")
 logging.basicConfig(level=logging.INFO,format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.FileHandler(BASE/f"logs/bridge_{today}.log",encoding="utf-8"),logging.StreamHandler(sys.stdout)])
 log=logging.getLogger(__name__)
 
-DB_CONFIG={"host":"localhost","port":5433,"dbname":"mykeibadb","user":"postgres","password":""}
+DB_CONFIG=dict(CONFIG_DB_CONFIG)
 OLLAMA_URL="http://localhost:11434/api/chat"
 MODEL="qwen2.5:3b"
 TRACE_ID=str(uuid.uuid4())
@@ -109,12 +123,27 @@ CREATE TABLE IF NOT EXISTS explanations (
 )
 """
 
-def main():
+def main(date_str: str = "", dry_run: bool = False) -> int:
+    target_date = datetime.strptime(date_str or today, "%Y%m%d")
+    kaisai_nen = target_date.strftime("%Y")
+    kaisai_gappi = target_date.strftime("%m%d")
+
     log.info("="*60)
     log.info("bridge_today.py 実行開始")
     log.info(f"  MODEL   : {MODEL}")
     log.info(f"  RUN_TAG : {RUN_TAG}")
+    log.info(f"  DATE    : {kaisai_nen}{kaisai_gappi}")
     log.info("="*60)
+
+    missing = [name for name in ["psycopg2"] if importlib.util.find_spec(name) is None]
+    if dry_run:
+        log.info("[DRY-RUN] BASE=%s missing=%s", BASE, missing or "none")
+        return 0
+    if missing:
+        log.error("依存不足のため実行できません: %s", ", ".join(missing))
+        return 1
+
+    import psycopg2
 
     conn=psycopg2.connect(**DB_CONFIG)
     cur=conn.cursor()
@@ -142,12 +171,12 @@ def main():
         FROM umagoto_race_joho u
         JOIN race_shosai r ON u.race_code=r.race_code
         LEFT JOIN odds1_tansho o ON u.race_code=o.race_code AND u.umaban=o.umaban
-        WHERE u.kaisai_gappi='0502' AND u.kaisai_nen='2026'
+        WHERE u.kaisai_gappi=%s AND u.kaisai_nen=%s
           AND u.keibajo_code='05'
           AND u.race_bango IN ('01','11')
           AND COALESCE(CAST(o.ninki AS INTEGER),99) <= 3
         ORDER BY u.race_bango, CAST(o.ninki AS INTEGER)
-    """)
+    """, (kaisai_gappi, kaisai_nen))
     rows=cur.fetchall()
     log.info(f"処理対象: {len(rows)} 頭")
 
@@ -221,6 +250,11 @@ def main():
     log.info("="*60)
     cur.close()
     conn.close()
+    return 0 if ng == 0 else 1
 
 if __name__=="__main__":
-    main()
+    parser = argparse.ArgumentParser(description="今日のDBデータをLLM explainに流す")
+    parser.add_argument("--date", default="", help="対象日 YYYYMMDD（省略時は今日）")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+    sys.exit(main(args.date, args.dry_run))

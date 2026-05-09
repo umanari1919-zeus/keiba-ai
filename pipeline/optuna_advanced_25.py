@@ -10,6 +10,11 @@ import pickle
 import json
 import os
 import optuna
+from pipeline.config import BASE_DIR, CSV_FEATURES, DATA_DIR
+from pipeline.native_runtime import ensure_native_runtime
+
+ensure_native_runtime()
+
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from sklearn.model_selection import StratifiedKFold
@@ -20,8 +25,7 @@ import catboost as cb
 from datetime import datetime
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
-MODEL_FILE = "D:\\keiba_ai\\model_v8.pkl"
-DATA_DIR   = "D:\\keiba_ai\\data"
+MODEL_FILE = os.path.join(BASE_DIR, "model_v8.pkl")
 
 
 # ──────────────────────────────────────────────
@@ -151,7 +155,7 @@ def run_optuna_advanced(n_trials_lgb=80, n_trials_xgb=60, n_trials_cb=50):
     le       = saved['le']
     features = saved['features']
 
-    df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df = pd.read_csv(CSV_FEATURES,
                      encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     df = df.fillna(0)
     feats = [f for f in features if f in df.columns]

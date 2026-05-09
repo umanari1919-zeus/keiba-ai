@@ -9,11 +9,13 @@ agents.RAGStore.build_from_features_csv() を利用。
   python pipeline_v2/10_rag_index.py
   python pipeline_v2/10_rag_index.py --dry-run   # 行数確認のみ
   python pipeline_v2/10_rag_index.py --limit 5000
+  python pipeline_v2/10_rag_index.py --limit 50000 --rebuild
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import logging
 import os
 import pathlib
@@ -21,13 +23,12 @@ import sys
 import uuid
 from datetime import datetime
 
-_BASE_DIR = pathlib.Path(r"D:\keiba_ai")
-# BASE_DIR を必ず先頭に (worktree より優先)
-if str(_BASE_DIR) in sys.path:
-    sys.path.remove(str(_BASE_DIR))
-sys.path.insert(0, str(_BASE_DIR))
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+# プロジェクトルートを必ず先頭に (worktree より優先)
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
 
-BASE_DIR = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
 BASE     = pathlib.Path(__file__).parent
 LOG_DIR  = BASE / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -43,10 +44,35 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-FEAT_CSV = BASE_DIR / "keiba_data_features.csv"
+try:
+    from pipeline.config import CSV_FEATURES
+except ImportError:
+    CSV_FEATURES = str(PROJECT_ROOT / "keiba_data_features.csv")
+
+FEAT_CSV = pathlib.Path(CSV_FEATURES)
 
 
-def build_rag_index(limit: int = 0, dry_run: bool = False) -> dict:
+def _clean_id_part(value: object) -> str:
+    text = str(value or "").strip()
+    return "" if text.lower() in {"nan", "none", "null"} else text
+
+
+def make_doc_id(row_index: int, row: object) -> str:
+    """CSV 行から再実行しても安定する RAG document ID を作る。"""
+    race_code = _clean_id_part(row.get("race_code", ""))
+    horse_id = _clean_id_part(row.get("ketto_toroku_bango", row.get("horse_id", "")))
+    umaban = _clean_id_part(row.get("umaban", ""))
+    return f"row:{row_index}:race:{race_code}:horse:{horse_id}:umaban:{umaban}"
+
+
+def count_csv_rows(csv_path: pathlib.Path) -> int:
+    """pandas がなくても dry-run 用に CSV 行数だけ確認する。"""
+    with csv_path.open("r", encoding="utf-8-sig", errors="replace", newline="") as f:
+        row_count = sum(1 for _ in f)
+    return max(row_count - 1, 0)
+
+
+def build_rag_index(limit: int = 0, dry_run: bool = False, rebuild: bool = False) -> dict:
     """
     keiba_data_features.csv から RAGStore インデックスを構築する。
 
@@ -54,6 +80,7 @@ def build_rag_index(limit: int = 0, dry_run: bool = False) -> dict:
     ----------
     limit   : 0 = 全行, 正値 = 先頭 N 行のみ（開発・テスト用）
     dry_run : True = CSV 行数確認のみ、インデックス構築スキップ
+    rebuild : True = 既存ストアを消してから構築
 
     Returns
     -------
@@ -63,9 +90,23 @@ def build_rag_index(limit: int = 0, dry_run: bool = False) -> dict:
         log.error("keiba_data_features.csv が見つかりません: %s", FEAT_CSV)
         return {"error": "features csv not found"}
 
+    if not dry_run and limit <= 0 and os.getenv("KEIBA_RAG_FULL", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        limit = int(os.getenv("KEIBA_RAG_DEFAULT_LIMIT", "5000"))
+        log.info("日次安全上限を適用: limit=%d（全件は KEIBA_RAG_FULL=1）", limit)
+
     # CSV 行数の確認
-    import pandas as pd
     log.info("CSV 読み込み中: %s", FEAT_CSV)
+    try:
+        import pandas as pd
+    except ImportError:
+        if dry_run:
+            csv_rows = count_csv_rows(FEAT_CSV)
+            log.info("  総行数: %d (csv フォールバック)", csv_rows)
+            log.info("[DRY-RUN] pandas 未導入のため行数確認のみ実施しました。")
+            return {"indexed": 0, "csv_rows": csv_rows, "dry_run": True}
+        log.error("pandas インポート失敗: rag_index 本実行には pandas が必要です")
+        return {"error": "pandas not installed"}
+
     df = pd.read_csv(FEAT_CSV, on_bad_lines="skip", low_memory=False)
     csv_rows = len(df)
     log.info("  総行数: %d", csv_rows)
@@ -87,38 +128,63 @@ def build_rag_index(limit: int = 0, dry_run: bool = False) -> dict:
 
     log.info("RAGStore バックエンド: %s", BACKEND)
     store = get_default_store()
+    if rebuild:
+        before_count = store.count()
+        store.clear()
+        log.info("RAGStore rebuild: 既存 %d 件をクリア", before_count)
+        existing_ids: set[str] = set()
+    else:
+        existing_ids = store.existing_ids()
+        log.info("RAGStore 既存ID: %d 件", len(existing_ids))
 
     # 行ごとにエンベッディング追加
     indexed = 0
     skipped = 0
-    for _, row in df.iterrows():
-        horse_id = str(row.get("ketto_toroku_bango", row.get("horse_id", f"row_{indexed}")))
+    skipped_existing = 0
+    for row_index, row in df.iterrows():
+        raw_horse_id = _clean_id_part(row.get("ketto_toroku_bango", row.get("horse_id", "")))
+        doc_id = make_doc_id(int(row_index), row)
+        if doc_id in existing_ids:
+            skipped_existing += 1
+            continue
         features = row.to_dict()
         metadata = {
             "race_code": str(row.get("race_code", "")),
             "race_date": str(row.get("race_date", "")),
             "bamei":     str(row.get("bamei", "")),
+            "horse_id":  raw_horse_id,
+            "row_index": int(row_index),
         }
         try:
-            store.add(horse_id, features, metadata)
+            store.add(doc_id, features, metadata)
+            existing_ids.add(doc_id)
             indexed += 1
         except Exception as exc:
-            log.debug("add エラー (horse_id=%s): %s", horse_id, exc)
+            log.debug("add エラー (doc_id=%s): %s", doc_id, exc)
             skipped += 1
 
         if indexed % 1000 == 0 and indexed > 0:
             log.info("  インデックス構築中: %d 行完了", indexed)
 
-    log.info("RAG インデックス構築完了: indexed=%d skipped=%d backend=%s", indexed, skipped, BACKEND)
-    return {"indexed": indexed, "skipped": skipped, "csv_rows": csv_rows, "backend": BACKEND}
+    log.info(
+        "RAG インデックス構築完了: indexed=%d skipped=%d existing=%d backend=%s",
+        indexed, skipped, skipped_existing, BACKEND,
+    )
+    return {
+        "indexed": indexed,
+        "skipped": skipped,
+        "skipped_existing": skipped_existing,
+        "csv_rows": csv_rows,
+        "backend": BACKEND,
+    }
 
 
-def main(trace_id: str = "", run_tag: str = "", dry_run: bool = False, limit: int = 0) -> int:
+def main(trace_id: str = "", run_tag: str = "", dry_run: bool = False, limit: int = 0, rebuild: bool = False) -> int:
     trace_id = trace_id or str(uuid.uuid4())
     run_tag  = run_tag  or f"run_{today}_{uuid.uuid4().hex[:8]}"
     log.info("=== rag_index ステージ開始 trace=%s ===", trace_id)
 
-    result = build_rag_index(limit=limit, dry_run=dry_run)
+    result = build_rag_index(limit=limit, dry_run=dry_run, rebuild=rebuild)
 
     if "error" in result:
         log.error("rag_index 失敗: %s", result["error"])
@@ -132,7 +198,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="RAG ベクトルインデックス構築")
     parser.add_argument("--dry-run",  action="store_true")
     parser.add_argument("--limit",    type=int, default=0, help="インデックス対象行数（0=全件）")
+    parser.add_argument("--rebuild",  action="store_true", help="既存 RAGStore を消してから構築")
     parser.add_argument("--trace_id", default="")
     parser.add_argument("--run_tag",  default="")
     args = parser.parse_args()
-    sys.exit(main(args.trace_id, args.run_tag, args.dry_run, args.limit))
+    sys.exit(main(args.trace_id, args.run_tag, args.dry_run, args.limit, args.rebuild))

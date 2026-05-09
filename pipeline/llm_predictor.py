@@ -17,9 +17,11 @@ import numpy as np
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional
+from pipeline.config import BASE_DIR, DATA_DIR
+from pipeline.native_runtime import ensure_native_runtime
 
-BASE_DIR   = "D:\\keiba_ai"
-DATA_DIR   = os.path.join(BASE_DIR, "data")
+ensure_native_runtime()
+
 MODEL_PATH = os.path.join(BASE_DIR, "model_v8.pkl")
 
 # ─────────────────────────────────────────────────────────────
@@ -35,9 +37,7 @@ FEAT_JP = {
     "win_rate":            "通算勝率",
     "sogo_win_rate":       "総合勝率",
     "past3_avg_chakujun":  "過去3走平均着順",
-    "past3_avg_odds":      "過去3走平均オッズ",
     "prev_chakujun":       "前走着順",
-    "prev_odds":           "前走オッズ",
     "total_races":         "通算出走数",
     "win_count":           "通算勝利数",
     "shiba_win_rate":      "芝勝率",

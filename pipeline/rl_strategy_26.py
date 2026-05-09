@@ -10,6 +10,7 @@ import json
 import os
 import pickle
 from datetime import datetime
+from pipeline.config import BASE_DIR, DATA_DIR
 
 try:
     import gymnasium as gym
@@ -20,8 +21,7 @@ try:
 except ImportError:
     RL_AVAILABLE = False
 
-DATA_DIR  = "D:\\keiba_ai\\data"
-RL_MODEL  = "D:\\keiba_ai\\rl_strategy.zip"
+RL_MODEL  = os.path.join(BASE_DIR, "rl_strategy.zip")
 
 
 # ──────────────────────────────────────────────
@@ -117,7 +117,7 @@ def train_rl_strategy(n_timesteps=200_000):
 
     # 学習データ（simulation_2025.csv から）
     try:
-        sim_df = pd.read_csv("D:\\keiba_ai\\simulation_2025.csv",
+        sim_df = pd.read_csv(os.path.join(BASE_DIR, "simulation_2025.csv"),
                              encoding="utf-8-sig", on_bad_lines="skip")
         sim_df['win_prob'] = sim_df.get('win_prob', 0.1)
         if 'odds' not in sim_df.columns and 'tansho_odds' in sim_df.columns:

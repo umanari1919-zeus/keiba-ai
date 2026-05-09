@@ -15,10 +15,9 @@ import argparse
 from datetime import datetime
 from typing import List, Dict, Optional
 from zoneinfo import ZoneInfo
+from pipeline.config import BASE_DIR, DATA_DIR
 
 JST      = ZoneInfo("Asia/Tokyo")
-BASE_DIR = "D:\\keiba_ai"
-DATA_DIR = os.path.join(BASE_DIR, "data")
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")
 
 KEIBAJO_NAME = {

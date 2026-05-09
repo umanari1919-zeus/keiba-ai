@@ -2,7 +2,7 @@
 SHAP でアンサンブルモデルの予測根拠を可視化する。
 勝率・連対率・複勝率を意識した可視化を追加。
 
-出力先: D:/keiba_ai/shap_output/
+出力先: <project_root>/shap_output/
   [基本 SHAP]
   01_lgb_summary.png       - LightGBM beeswarm（1着クラス）
   02_lgb_bar.png           - LightGBM 特徴量重要度棒グラフ
@@ -29,11 +29,12 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 from datetime import datetime
 from pipeline.ensemble_utils import load_ensemble_weights
+from pipeline.config import BASE_DIR, CSV_FEATURES
 
 # ── 設定 ──────────────────────────────────────────────────────────────────────
-MODEL_PATH   = "D:/keiba_ai/model_v8.pkl"
-DATA_PATH    = "D:/keiba_ai/keiba_data_features.csv"
-OUT_DIR      = "D:/keiba_ai/shap_output"
+MODEL_PATH   = os.path.join(BASE_DIR, "model_v8.pkl")
+DATA_PATH    = CSV_FEATURES
+OUT_DIR      = os.path.join(BASE_DIR, "shap_output")
 SAMPLE_N     = 3000   # SHAP計算用サンプル数（LGB/XGB）
 CB_SAMPLE_N  = 500    # CatBoost SHAP はメモリ大→小サンプル
 WATERFALL_N  = 5      # 穴馬個別説明の頭数

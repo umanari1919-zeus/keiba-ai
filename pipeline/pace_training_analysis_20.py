@@ -6,10 +6,32 @@
 """
 import pandas as pd
 import numpy as np
+import pathlib
+import sys
 from sqlalchemy import create_engine, text
 from datetime import datetime
 
-DB_URL = "postgresql://postgres:trust@localhost:5433/mykeibadb"
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from pipeline.config import CSV_FEATURES, DB_URL
+
+
+def coerce_horse_id_for_merge(
+    left: pd.DataFrame,
+    right: pd.DataFrame,
+    key: str = "ketto_toroku_bango",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """CSV とDBで推定型がずれても血統登録番号で安全に merge する。"""
+    left = left.copy()
+    right = right.copy()
+    if key in left.columns:
+        left[key] = left[key].astype(str).str.strip()
+    if key in right.columns:
+        right[key] = right[key].astype(str).str.strip()
+    return left, right
 
 
 # ──────────────────────────────────────────────
@@ -141,12 +163,13 @@ def run_pace_training_analysis():
     print("🏋️ ペース・調教タイム分析")
     print("="*55)
 
-    df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df = pd.read_csv(CSV_FEATURES,
                      encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
 
     print("  📋 調教タイム特徴量を構築中...")
     training_df = build_training_features()
     if len(training_df) > 0:
+        df, training_df = coerce_horse_id_for_merge(df, training_df)
         df = df.merge(training_df, on='ketto_toroku_bango', how='left', suffixes=('', '_new'))
         for col in ['wood_intensity', 'hanro_intensity', 'wood_kick', 'hanro_kick', 'training_score']:
             if col in df.columns:
@@ -157,7 +180,7 @@ def run_pace_training_analysis():
     df = add_pace_features(df)
 
     df = df.fillna(0)
-    df.to_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df.to_csv(CSV_FEATURES,
               index=False, encoding="utf-8-sig")
     print(f"  ✅ 完了: {len(df):,}件 × {len(df.columns)}列")
     return df

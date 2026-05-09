@@ -1,8 +1,10 @@
 import pandas as pd
 import numpy as np
+import os
+from pipeline.config import BASE_DIR
 
 def detailed_analysis():
-    df = pd.read_csv("D:\\keiba_ai\\simulation_2025.csv",
+    df = pd.read_csv(os.path.join(BASE_DIR, "simulation_2025.csv"),
                      encoding="utf-8-sig", on_bad_lines="skip")
     
     print("="*50)

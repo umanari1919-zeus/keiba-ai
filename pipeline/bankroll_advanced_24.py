@@ -11,10 +11,10 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 from scipy.optimize import minimize_scalar, minimize
+from pipeline.config import DATA_DIR
 
-DATA_DIR     = "D:\\keiba_ai\\data"
-BANKROLL_FILE = f"{DATA_DIR}\\bankroll.json"
-DD_LOG_FILE   = f"{DATA_DIR}\\drawdown_log.json"
+BANKROLL_FILE = os.path.join(DATA_DIR, "bankroll.json")
+DD_LOG_FILE   = os.path.join(DATA_DIR, "drawdown_log.json")
 
 # ドローダウン閾値
 DD_THRESHOLDS = {

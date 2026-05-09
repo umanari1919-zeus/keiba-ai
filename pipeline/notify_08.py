@@ -1,3 +1,4 @@
+import argparse
 import smtplib
 import os
 import glob
@@ -7,12 +8,19 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 try:
     from dotenv import load_dotenv
-    load_dotenv("D:\\keiba_ai\\.env")
 except ImportError:
     pass  # python-dotenv 未インストール時は .env を無視
 from datetime import datetime, timedelta
 
 from pipeline.config import BASE_DIR as BASE, DB_CONFIG
+try:
+    load_dotenv(os.path.join(BASE, ".env"))
+except NameError:
+    pass
+
+
+def _env_truthy(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 _JYO = {
     '01':'札幌','02':'函館','03':'福島','04':'新潟','05':'東京',
@@ -41,9 +49,18 @@ def send_daily_report():
     # 土日祝は send_pipeline_report で対応（scheduler側で制御）
     return send_pipeline_report({})
 
-def send_notify(subject, body):
+def send_notify(subject, body, *, live: bool = False):
     """Gmail通知を送る"""
-    
+    if not (live or _env_truthy("KEIBA_NOTIFY_LIVE")):
+        print("⏩ DRY-RUN: Gmail通知は --live または KEIBA_NOTIFY_LIVE=1 が必要です")
+        print("📧 送信予定メール:")
+        print("=" * 60)
+        print(f"Subject: {subject}")
+        print("-" * 60)
+        print(body)
+        print("=" * 60)
+        return False
+
     gmail_address = os.getenv("GMAIL_ADDRESS")
     gmail_password = os.getenv("GMAIL_APP_PASSWORD")
     notify_to = os.getenv("NOTIFY_TO")
@@ -356,7 +373,7 @@ def send_pipeline_report(result):
     subject  = f"🙏 うまなり地蔵AI 本日の推奨ベット {now.strftime('%m/%d')}"
 
     # 本日のagent_picksを読む（なければ最新）
-    base    = "D:\\keiba_ai"
+    base    = BASE
     pattern = os.path.join(base, f"agent_picks_{date_str}.json")
     files   = glob.glob(pattern) or sorted(
                   glob.glob(os.path.join(base, "agent_picks_*.json")), reverse=True
@@ -418,7 +435,7 @@ def send_pipeline_report(result):
 
     return send_notify(subject, body)
 
-def send_test():
+def send_test(*, live: bool = False):
     """テスト通知"""
     subject = "🙏 うまなり地蔵AI テスト通知"
     body = """
@@ -431,8 +448,11 @@ Gmail通知の設定が完了しました🎉
 
 データと閻魔大王の御加護を信じよ🔥
 """
-    return send_notify(subject, body)
+    return send_notify(subject, body, live=live)
 
 if __name__ == "__main__":
-    print("📧 テスト通知を送信します...")
-    send_test()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--live", action="store_true", help="Gmail実送信を許可（デフォルトはdry-run）")
+    args = parser.parse_args()
+    print("📧 テスト通知を生成します...")
+    send_test(live=args.live)

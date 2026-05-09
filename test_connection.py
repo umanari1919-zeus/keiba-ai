@@ -3,10 +3,12 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 import numpy as np
+from pipeline.config import CSV_FEATURES, CSV_READ_OPTS, LEAKY_DERIVED_FEATURE_COLUMNS
 
 # データ読み込み
 print("📂 データ読み込み中...")
-df = pd.read_csv("D:\\keiba_ai\\keiba_data.csv", encoding="utf-8-sig")
+df = pd.read_csv(CSV_FEATURES, **CSV_READ_OPTS)
+df = df.drop(columns=[c for c in LEAKY_DERIVED_FEATURE_COLUMNS if c in df.columns])
 
 # データクレンジング
 print("🧹 データクレンジング中...")
@@ -31,10 +33,11 @@ print(f"✅ クレンジング完了！件数：{len(df):,}件")
 features = [
     'barei', 'seibetsu_code', 'kishu_code', 'chokyoshi_code',
     'futan_juryo', 'bataiju', 'zogen_sa', 'zogen_fugo',
-    'tansho_odds', 'tansho_ninkijun', 'kyakushitsu_hantei',
+    'kyakushitsu_hantei',
     'kyori', 'track_code', 'tenko_code',
     'shiba_babajotai_code', 'dirt_babajotai_code', 'shusso_tosu'
 ]
+features = [feature for feature in features if feature in df.columns]
 
 X = df[features]
 y = df['kakutei_chakujun']

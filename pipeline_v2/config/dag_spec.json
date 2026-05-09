@@ -29,6 +29,7 @@
     {
       "task_id": "rag_index",
       "script": "10_rag_index.py",
+      "args": ["--limit", "5000"],
       "depends_on": [
         "feature_gen"
       ]
@@ -41,11 +42,20 @@
       ]
     },
     {
+      "task_id": "enrich_today",
+      "script": "24_enrich_today.py",
+      "description": "当日出馬表の特徴量を過去データから補完",
+      "depends_on": [
+        "feature_gen"
+      ]
+    },
+    {
       "task_id": "batch_inference",
       "script": "04_batch_inference.py",
       "depends_on": [
         "feature_gen",
-        "race_select"
+        "race_select",
+        "enrich_today"
       ]
     },
     {

@@ -26,20 +26,19 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine, text
+from pipeline.config import BASE_DIR, DATA_DIR, DB_URL
 
 # ─────────────────────────────────────────────────────────────
 # 設定
 # ─────────────────────────────────────────────────────────────
 
-BASE_DIR   = "D:\\keiba_ai"
-KB_DIR     = os.path.join(BASE_DIR, "data", "knowledge_base")
+KB_DIR     = os.path.join(DATA_DIR, "knowledge_base")
 SNAP_DIR   = os.path.join(KB_DIR, "snapshots")
 EVT_DIR    = os.path.join(KB_DIR, "events")
 LATEST     = os.path.join(KB_DIR, "LATEST.json")
 CHANGELOG  = os.path.join(KB_DIR, "changelog.md")
 CONF_LOG   = os.path.join(KB_DIR, "confidence_history.csv")
-FEAT_FILE  = os.path.join(BASE_DIR, "data", "keiba_data_features.csv")
-DB_URL     = "postgresql://postgres:trust@localhost:5433/mykeibadb"
+FEAT_FILE  = os.path.join(DATA_DIR, "keiba_data_features.csv")
 
 _ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 

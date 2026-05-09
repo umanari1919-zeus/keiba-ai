@@ -10,20 +10,20 @@ from __future__ import annotations
 import json
 import logging
 import os
-import pathlib
 import subprocess
 import sys
 from datetime import datetime, timezone
 
-import pandas as pd
-
 from .base_agent import BaseAgent, AgentMeta
 from .audit_logger import sha256_of
+from .path_config import BASE_DIR, DATA_DIR
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 
 log = logging.getLogger(__name__)
-
-BASE_DIR = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-DATA_DIR = BASE_DIR / "data"
 
 # マニフェスト定数
 EV_THRESHOLD  = 0.15
@@ -45,14 +45,14 @@ class BatchInferenceAgent(BaseAgent):
         today = datetime.now().strftime("%Y%m%d")
 
         # ── 1. 予測実行 (predict_04.py) ──────────────────────────
-        pred_ok = self._run_script("pipeline/predict_04.py", meta)
+        pred_ok, pred_msg = self._run_script("pipeline/predict_04.py", meta, extra_args=["--dry-run"])
         if not pred_ok:
-            raise RuntimeError("predict_04.py が失敗しました")
+            raise RuntimeError(f"predict_04.py が失敗しました: {pred_msg}")
 
         # ── 2. EV 計算 (ev_engine_10.py) ─────────────────────────
-        ev_ok = self._run_script("pipeline/ev_engine_10.py", meta)
+        ev_ok, ev_msg = self._run_script("pipeline/ev_engine_10.py", meta, extra_args=["--dry-run"])
         if not ev_ok:
-            log.warning("ev_engine_10.py が失敗しました。EV なし予測を使用します。")
+            log.warning("ev_engine_10.py が失敗しました。EV なし予測を使用します: %s", ev_msg)
 
         # ── 3. 予測結果を読み込み inference_output_v1 形式に変換 ──
         predictions = self._load_predictions(today)
@@ -84,6 +84,9 @@ class BatchInferenceAgent(BaseAgent):
 
         # ev_analysis を優先
         src = candidates[-1]
+        if pd is None:
+            log.warning("pandas 未インストールのため %s を読み込めません", src)
+            return []
         try:
             df = pd.read_csv(src, on_bad_lines="skip")
         except Exception as exc:
@@ -118,17 +121,24 @@ class BatchInferenceAgent(BaseAgent):
 
         return predictions
 
-    def _run_script(self, rel_path: str, meta: AgentMeta) -> bool:
+    def _run_script(self, rel_path: str, meta: AgentMeta, extra_args: list[str] | None = None) -> tuple[bool, str]:
         env = {**os.environ, "PYTHONUTF8": "1", "PYTHONPATH": str(BASE_DIR)}
+        cmd = [
+            sys.executable, "-X", "utf8", str(BASE_DIR / rel_path),
+            "--trace_id", meta.trace_id,
+            "--run_tag",  meta.run_tag,
+        ]
+        if extra_args:
+            cmd.extend(extra_args)
         result = subprocess.run(
-            [sys.executable, "-X", "utf8", str(BASE_DIR / rel_path),
-             "--trace_id", meta.trace_id,
-             "--run_tag",  meta.run_tag],
+            cmd,
             capture_output=True, text=True, encoding="utf-8",
             cwd=str(BASE_DIR), env=env,
         )
         if result.stdout:
             log.info(result.stdout.rstrip())
-        if result.returncode != 0 and result.stderr:
-            log.error(result.stderr[-500:])
-        return result.returncode == 0
+        stderr_msg = result.stderr.strip()
+        if result.returncode != 0 and stderr_msg:
+            log.error(stderr_msg[-500:])
+        message = stderr_msg or result.stdout.strip() or f"returncode={result.returncode}"
+        return result.returncode == 0, message

@@ -12,7 +12,6 @@ import hashlib
 import json
 import logging
 import os
-import pathlib
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -20,12 +19,11 @@ from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
 from .audit_logger import sha256_of
+from .path_config import BASE_DIR, DATA_DIR
 from .rag_store import get_default_store
 
 log = logging.getLogger(__name__)
 
-BASE_DIR   = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-DATA_DIR   = BASE_DIR / "data"
 PROMPT_DIR = BASE_DIR / "pipeline_v2" / "config"
 
 # マニフェスト定数
@@ -52,7 +50,8 @@ class LLMExplainAgent(BaseAgent):
     agent_id           = "llm-explain-agent"
     agent_version      = "2.5.0"
     # input_schema は LLM呼び出し時に内部で検証するため BaseAgent envelope には適用しない
-    output_schema_name = "llm_explain_response_v1"
+    # 出力は複数説明の集約なので、単一説明スキーマはここでは適用しない。
+    output_schema_name = None
 
     def _run(self, meta: AgentMeta, payload: dict) -> dict:
         predictions       = payload.get("predictions", [])

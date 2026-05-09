@@ -11,6 +11,7 @@ dag_spec_weekly.json に従い週次ステージを実行する。
 
 import json
 import logging
+import os
 import pathlib
 import subprocess
 import sys
@@ -18,11 +19,11 @@ import uuid
 from datetime import datetime, timezone
 
 # ─── agents/ パス ────────────────────────────────────────────
-_BASE_DIR = pathlib.Path(r"D:\keiba_ai")
-# BASE_DIR を必ず先頭に (worktree より優先)
-if str(_BASE_DIR) in sys.path:
-    sys.path.remove(str(_BASE_DIR))
-sys.path.insert(0, str(_BASE_DIR))
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+# プロジェクトルートを必ず先頭に (worktree より優先)
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 BASE       = pathlib.Path(__file__).parent
 CONFIG_DIR = BASE / "config"
@@ -52,8 +53,27 @@ def load_dag_spec() -> dict:
         return json.load(f)
 
 
+def normalize_tasks(spec: dict) -> list[dict]:
+    if "dag" in spec:
+        return spec.get("dag", [])
+    return [
+        {
+            "task_id": task.get("id", task.get("task_id", "")),
+            "script": task.get("script", ""),
+            "depends_on": task.get("depends_on", []),
+            "args": task.get("args", []),
+        }
+        for task in spec.get("steps", [])
+    ]
+
+
 def run_stage(script_name: str, task_id: str, extra_args: list[str] | None = None) -> bool:
-    script_path = BASE / script_name
+    raw_path = pathlib.Path(script_name)
+    if raw_path.is_absolute():
+        script_path = raw_path
+    else:
+        local_path = BASE / script_name
+        script_path = local_path if local_path.exists() else PROJECT_ROOT / script_name
     log.info(">> ステージ開始: %s (%s)", task_id, script_name)
 
     if not script_path.exists():
@@ -119,7 +139,14 @@ def resolve_execution_order(dag: list) -> list:
     return ordered
 
 
-def main(dry_run: bool = False) -> int:
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def main(dry_run: bool = False, strict_ops: bool | None = None) -> int:
     log.info("=" * 60)
     log.info("うまなり地蔵AI 週次バッチ起動")
     log.info("  TRACE_ID : %s", TRACE_ID)
@@ -128,16 +155,25 @@ def main(dry_run: bool = False) -> int:
     log.info("=" * 60)
 
     # ─── Ops ヘルスチェック ───────────────────────────────────
-    healthy, reason = check_ops_health()
-    if not healthy:
-        log.error("[OPS] ヘルスチェック失敗: %s", reason)
-        log.error("  週次バッチを中止します")
-        return 1
-    log.info("[OPS] ヘルスチェック OK")
+    if dry_run:
+        log.info("[DRY-RUN] Ops ヘルスチェックをスキップ")
+    else:
+        if strict_ops is None:
+            strict_ops = _env_flag("KEIBA_WEEKLY_STRICT_OPS", _env_flag("KEIBA_STRICT_OPS", False))
+        healthy, reason = check_ops_health()
+        if not healthy:
+            if strict_ops:
+                log.error("[OPS] ヘルスチェック失敗: %s", reason)
+                log.error("  strict ops のため週次バッチを中止します")
+                return 1
+            log.warning("[OPS] ヘルスチェック警告: %s", reason)
+            log.warning("  DB なしの縮退モードで週次バッチを継続します")
+        else:
+            log.info("[OPS] ヘルスチェック OK")
 
     # ─── DAG 読み込み ─────────────────────────────────────────
     spec          = load_dag_spec()
-    dag           = spec.get("dag", [])
+    dag           = normalize_tasks(spec)
     ordered_tasks = resolve_execution_order(dag)
     log.info("実行順序: %s", [t["task_id"] for t in ordered_tasks])
 
@@ -146,12 +182,13 @@ def main(dry_run: bool = False) -> int:
     for task in ordered_tasks:
         task_id     = task["task_id"]
         script_name = task["script"]
+        extra_args  = task.get("args", [])
 
         if dry_run:
             log.info("  [DRY-RUN] skip: %s", script_name)
             continue
 
-        success = run_stage(script_name, task_id)
+        success = run_stage(script_name, task_id, extra_args)
         if not success:
             failed_stages.append(task_id)
             log.error("  %s が失敗。後続ステージを停止します", task_id)
@@ -174,15 +211,15 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--strict-ops", action="store_true")
+    parser.add_argument("--trace_id", default="")
+    parser.add_argument("--run_tag", default="")
     args, _ = parser.parse_known_args()
 
-    if args.dry_run:
-        import sys as _sys
-        _mod = _sys.modules[__name__]
-        _orig = run_stage
-        def _dry(script_name, task_id, extra_args=None):
-            log.info("  [DRY-RUN] skip: %s", script_name)
-            return True
-        _mod.run_stage = _dry  # type: ignore
+    if args.trace_id:
+        TRACE_ID = args.trace_id
+        RUN_TAG = args.run_tag or f"weekly_{today}_{TRACE_ID[:8]}"
+    elif args.run_tag:
+        RUN_TAG = args.run_tag
 
-    sys.exit(main(dry_run=args.dry_run))
+    sys.exit(main(dry_run=args.dry_run, strict_ops=args.strict_ops))

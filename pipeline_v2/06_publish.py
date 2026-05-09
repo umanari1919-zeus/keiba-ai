@@ -15,22 +15,26 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import pathlib
 import sys
 import uuid
 from datetime import datetime
 
-_BASE_DIR = pathlib.Path(r"D:\keiba_ai")
-# BASE_DIR を必ず先頭に (worktree より優先)
-if str(_BASE_DIR) in sys.path:
-    sys.path.remove(str(_BASE_DIR))
-sys.path.insert(0, str(_BASE_DIR))
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+# プロジェクトルートを必ず先頭に (worktree より優先)
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
 
-BASE_DIR = pathlib.Path("D:/keiba_ai")
-DATA_DIR = BASE_DIR / "data"
+from pipeline.config import BASE_DIR as CONFIG_BASE_DIR, DATA_DIR as CONFIG_DATA_DIR
+
+BASE_DIR = pathlib.Path(CONFIG_BASE_DIR)
+DATA_DIR = pathlib.Path(CONFIG_DATA_DIR)
 BASE     = pathlib.Path(__file__).parent
 LOG_DIR  = BASE / "logs"
 LOG_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(exist_ok=True)
 
 today = datetime.now().strftime("%Y%m%d")
 logging.basicConfig(
@@ -60,7 +64,11 @@ def _load_llm_explanations() -> dict:
         return {}
 
 
-def main(trace_id: str = "", run_tag: str = "", dry_run: bool = False) -> int:
+def _env_truthy(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def main(trace_id: str = "", run_tag: str = "", dry_run: bool = False, live: bool = False) -> int:
     trace_id = trace_id or str(uuid.uuid4())
     run_tag  = run_tag  or f"run_{today}_{uuid.uuid4().hex[:8]}"
     log.info("=== publish ステージ開始 trace=%s ===", trace_id)
@@ -76,9 +84,12 @@ def main(trace_id: str = "", run_tag: str = "", dry_run: bool = False) -> int:
     llm_data = _load_llm_explanations()
     explanations     = llm_data.get("explanations", llm_data.get("llm_explanations", []))
     requires_review  = llm_data.get("requires_human_review", [])
+    publish_live = live or _env_truthy("KEIBA_PUBLISH_LIVE")
+    if not publish_live and not dry_run:
+        log.info("publish はドラフト生成モードです。実投稿は --live または KEIBA_PUBLISH_LIVE=1 が必要です。")
 
     meta   = AgentMeta(trace_id=trace_id, run_tag=run_tag)
-    result = PublishAgent(dry_run=dry_run).execute(meta, {
+    result = PublishAgent(dry_run=dry_run, publish_live=publish_live).execute(meta, {
         "llm_explanations":      explanations,
         "requires_human_review": requires_review,
     })
@@ -87,9 +98,11 @@ def main(trace_id: str = "", run_tag: str = "", dry_run: bool = False) -> int:
         out = result.output
         log.info(
             "publish 完了: published=%s skipped_review=%s",
-            out.get("published_count", 0),
-            out.get("skipped_human_review", 0),
+            len(out.get("publications", [])),
+            out.get("held_back_count", 0),
         )
+        if out.get("draft_path"):
+            log.info("publish draft 保存: %s", out["draft_path"])
         return 0
     log.error("publish 失敗: %s", result.error)
     return 1
@@ -98,7 +111,8 @@ def main(trace_id: str = "", run_tag: str = "", dry_run: bool = False) -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run",  action="store_true")
+    parser.add_argument("--live",     action="store_true", help="実投稿を許可（デフォルトはドラフト生成のみ）")
     parser.add_argument("--trace_id", default="")
     parser.add_argument("--run_tag",  default="")
     args = parser.parse_args()
-    sys.exit(main(args.trace_id, args.run_tag, args.dry_run))
+    sys.exit(main(args.trace_id, args.run_tag, args.dry_run, args.live))

@@ -1,18 +1,40 @@
 """
 data_fetch_01.py  --  PostgreSQL -> keiba_data.csv / DB snapshot
-新規列: grade_score, prev_chakujun, prev_odds, prev_keibajo, prev_kyori,
+新規列: grade_score, prev_chakujun, prev_keibajo, prev_kyori,
         prev_grade_score, grade_up, kishu_change, weeks_since_last_race,
         chokyo_3f_avg3, chokyo_3f_best, chokyo_3f_std, chokyo_trend,
         chokyo_improving, fresh_improving,
         kishu_keibajo_win_rate, chokyoshi_place_win_rate
 """
-import pandas as pd
-import numpy as np
+from __future__ import annotations
+
+import argparse
+import os
+import pathlib
+import sys
 from datetime import datetime
 
-from pipeline.db_sync_42 import add_ingest_meta, get_engine, write_snapshot
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-DB_URL = "postgresql://postgres:trust@localhost:5433/mykeibadb"
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+from pipeline.config import CSV_RAW, DB_URL, LEAKY_DERIVED_FEATURE_COLUMNS
+
+
+def check_runtime() -> list[str]:
+    issues = []
+    if pd is None:
+        issues.append("pandas が未インストールです")
+    try:
+        import psycopg2  # noqa: F401
+    except ImportError:
+        issues.append("psycopg2 が未インストールです")
+    return issues
 
 GRADE_SCORE = {
     "G1":10,"GI":10,"G2":8,"GII":8,"G3":6,"GIII":6,
@@ -32,6 +54,10 @@ def _grade_to_score(g):
     return 1
 
 def fetch_data():
+    if pd is None:
+        raise RuntimeError("pandas が未インストールのため data_fetch_01 を実行できません")
+    from pipeline.db_sync_42 import add_ingest_meta, get_engine, write_snapshot
+
     print(f"[data_fetch_01] {datetime.now().strftime('%H:%M:%S')} データ取得開始...")
     engine = get_engine(DB_URL)
 
@@ -115,13 +141,11 @@ def fetch_data():
                 SELECT u.ketto_toroku_bango, u.race_code,
                     u.kishu_code,
                     u.kakutei_chakujun::int  AS chakujun,
-                    u.tansho_odds::numeric   AS odds,
                     u.keibajo_code,
                     r.kyori, r.grade_code,
                     u.kaisai_nen||u.kaisai_gappi AS rdate,
                     LAG(u.kishu_code)   OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) AS prev_kishu,
                     LAG(u.kakutei_chakujun::int) OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) AS prev_chak,
-                    LAG(u.tansho_odds::numeric)  OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) AS prev_od,
                     LAG(u.keibajo_code) OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) AS prev_kei,
                     LAG(r.kyori)        OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) AS prev_kyo,
                     LAG(r.grade_code)        OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) AS prev_grd,
@@ -129,12 +153,10 @@ def fetch_data():
                 FROM umagoto_race_joho u
                 JOIN race_shosai r ON u.race_code = r.race_code
                 WHERE u.kakutei_chakujun ~ '^[0-9]+'
-                  AND u.tansho_odds ~ '^[0-9]+'
                   AND u.kaisai_nen >= '2019'
             )
             SELECT race_code, ketto_toroku_bango,
                 prev_chak  AS prev_chakujun,
-                prev_od/10 AS prev_odds,
                 prev_kei   AS prev_keibajo,
                 prev_kyo   AS prev_kyori,
                 prev_grd   AS prev_grade,
@@ -185,7 +207,7 @@ def fetch_data():
 
     df = df.merge(chokyo_df, on="ketto_toroku_bango", how="left")
     df = df.merge(
-        prev_df[["race_code","ketto_toroku_bango","prev_chakujun","prev_odds",
+        prev_df[["race_code","ketto_toroku_bango","prev_chakujun",
                  "prev_keibajo","prev_kyori","prev_grade",
                  "kishu_change","weeks_since_last_race"]],
         on=["race_code","ketto_toroku_bango"], how="left"
@@ -225,7 +247,7 @@ def fetch_data():
                 "sogo_1chaku","sogo_2chaku","sogo_3chaku",
                 "chokyo_3f","chokyo_lap_3f","chokyo_lap_1f","chokyo_4f",
                 "chokyo_3f_avg3","chokyo_3f_best","chokyo_3f_std","chokyo_trend",
-                "prev_chakujun","prev_odds","prev_kyori",
+                "prev_chakujun","prev_kyori",
                 "kishu_change","weeks_since_last_race",
                 "kishu_keibajo_win_rate","chokyoshi_place_win_rate"]:
         if col in df.columns:
@@ -252,7 +274,8 @@ def fetch_data():
     df = df.fillna(0)
 
     # ── 保存 ───────────────────────────────────────────────
-    out_path = "D:\\keiba_ai\\keiba_data.csv"
+    out_path = CSV_RAW
+    df = df.drop(columns=[c for c in LEAKY_DERIVED_FEATURE_COLUMNS if c in df.columns])
     df.to_csv(out_path, index=False, encoding="utf-8-sig")
     try:
         snapshot = add_ingest_meta(df, source_name="data_fetch_01")
@@ -268,7 +291,7 @@ def fetch_data():
         print(f"  ⚠️ DB同期スキップ: {e}")
 
     new_cols = ["race_grade","grade_score","prev_grade_score","grade_up",
-                "prev_chakujun","prev_odds","prev_keibajo","prev_kyori",
+                "prev_chakujun","prev_keibajo","prev_kyori",
                 "kishu_change","weeks_since_last_race",
                 "chokyo_3f_avg3","chokyo_3f_best","chokyo_3f_std","chokyo_trend",
                 "chokyo_improving","fresh_improving",
@@ -280,4 +303,18 @@ def fetch_data():
     return df
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="PostgreSQL から生データCSVを生成")
+    parser.add_argument("--dry-run", action="store_true", help="依存関係だけ確認する")
+    args, _ = parser.parse_known_args()
+
+    if args.dry_run:
+        issues = check_runtime()
+        if issues:
+            print("[data_fetch_01] dry-run: 要確認")
+            for issue in issues:
+                print(f"  - {issue}")
+        else:
+            print("[data_fetch_01] dry-run: 実行要件は概ね満たしています")
+        raise SystemExit(0)
+
     fetch_data()

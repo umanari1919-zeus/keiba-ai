@@ -14,18 +14,17 @@ from __future__ import annotations
 
 import logging
 import os
-import pathlib
 import subprocess
 import sys
 from datetime import datetime, timezone
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
+from .path_config import BASE_DIR, DATA_DIR
 
 log = logging.getLogger(__name__)
 
-BASE_DIR = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-KB_DIR   = BASE_DIR / "data" / "knowledge_base"
+KB_DIR   = DATA_DIR / "knowledge_base"
 
 
 class KnowledgeAgent(BaseAgent):

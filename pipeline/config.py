@@ -3,25 +3,81 @@
 全パイプラインファイルはここから定数を import すること。
 """
 import os
+import pathlib
+from urllib.parse import parse_qsl, unquote, urlparse
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
+if load_dotenv is not None:
+    load_dotenv(pathlib.Path(__file__).resolve().parent.parent / ".env")
+
+
+def _normalize_path(path_value: str) -> str:
+    """Windows パスを WSL/POSIX 上でも扱える表記に寄せる。"""
+    if os.name != "nt" and len(path_value) >= 3 and path_value[1:3] in (":\\", ":/"):
+        drive = path_value[0].lower()
+        tail = path_value[3:].replace("\\", "/")
+        return f"/mnt/{drive}/{tail}"
+    return path_value
+
+
+def _default_mykeibadb_exe() -> str:
+    if os.name == "nt":
+        return str(pathlib.Path.home() / "Downloads" / "mykeibadb_v3.63" / "mykeibadb.exe")
+    windows_user = os.getenv("WINDOWS_USER") or os.getenv("USER") or "uchih"
+    return str(pathlib.Path("/mnt/c/Users") / windows_user / "Downloads" / "mykeibadb_v3.63" / "mykeibadb.exe")
+
 
 # ── パス ───────────────────────────────────────────────
-BASE_DIR  = "D:\\keiba_ai"
+BASE_DIR  = os.getenv("KEIBA_BASE", str(pathlib.Path(__file__).resolve().parent.parent))
 DATA_DIR  = os.path.join(BASE_DIR, "data")
 PIPELINE_DIR = os.path.join(BASE_DIR, "pipeline")
 
 # JV-Link 同期ツール
-MYKEIBADB_EXE = r"C:\Users\uchih\Downloads\mykeibadb_v3.63\mykeibadb.exe"
+MYKEIBADB_EXE = _normalize_path(
+    os.getenv("MYKEIBADB_EXE", _default_mykeibadb_exe())
+)
 MYKEIBADB_DIR = os.path.dirname(MYKEIBADB_EXE)
 
 # ── データベース ────────────────────────────────────────
-DB_URL = "postgresql://postgres:trust@localhost:5433/mykeibadb"
-DB_CONFIG = dict(
-    host="127.0.0.1",
-    port=5433,
-    dbname="mykeibadb",
-    user="postgres",
-    options="-c client_encoding=UTF8",
-)
+DB_URL = os.getenv("KEIBA_DB_URL", "postgresql://postgres:trust@localhost:5433/mykeibadb")
+
+
+def _db_config_from_url(db_url: str) -> dict:
+    """KEIBA_DB_URL と psycopg2 の dict 設定を常に同期させる。"""
+    config = dict(
+        host="127.0.0.1",
+        port=5433,
+        dbname="mykeibadb",
+        user="postgres",
+        options="-c client_encoding=UTF8",
+    )
+    parsed = urlparse(db_url)
+    if parsed.hostname:
+        config["host"] = parsed.hostname
+    try:
+        if parsed.port:
+            config["port"] = parsed.port
+    except ValueError:
+        pass
+    if parsed.path and parsed.path != "/":
+        config["dbname"] = unquote(parsed.path.lstrip("/"))
+    if parsed.username:
+        config["user"] = unquote(parsed.username)
+    if parsed.password:
+        config["password"] = unquote(parsed.password)
+
+    # sslmode や connect_timeout などの libpq パラメータも URL 側で上書きできる。
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        if value != "":
+            config[key] = value
+    return config
+
+
+DB_CONFIG = _db_config_from_url(DB_URL)
 
 # ── モデル閾値 ─────────────────────────────────────────
 # 本番予測・EV分析用
@@ -50,6 +106,16 @@ MODEL_NN_PATH = os.path.join(BASE_DIR, "model_nn.pth")
 # ── CSV ファイル ────────────────────────────────────────
 CSV_RAW       = os.path.join(BASE_DIR, "keiba_data.csv")
 CSV_FEATURES  = os.path.join(BASE_DIR, "keiba_data_features.csv")
+PEDIGREE_OUTPUT_DIR = pathlib.Path(BASE_DIR) / "pedigree_output"
 
 # keiba_data_features.csv 339766行目が破損 → 必ず on_bad_lines='skip' を使用
 CSV_READ_OPTS = dict(encoding="utf-8-sig", low_memory=False, on_bad_lines="skip")
+
+# オッズ・人気の派生列は学習特徴量として使用しない（raw odds/ninki はEV評価用に限る）
+LEAKY_DERIVED_FEATURE_COLUMNS = (
+    "prev_odds",
+    "past3_avg_odds",
+    "ema3_odds",
+    "ema5_odds",
+    "ema10_odds",
+)

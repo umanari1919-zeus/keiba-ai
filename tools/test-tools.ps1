@@ -8,10 +8,12 @@ Write-Host "╚═════════════════════�
 Write-Host ""
 
 # グローバル PATH 確認
-$npmPath = "C:\Users\uchih\AppData\Roaming\npm"
-if ($env:Path -notlike "*npm*") {
+$npmPath = if ($env:APPDATA) { Join-Path $env:APPDATA "npm" } else { "" }
+if (-not $npmPath -or $env:Path -notlike "*$npmPath*") {
     Write-Host "❌ PATH に npm bin ディレクトリがありません" -ForegroundColor Red
-    Write-Host "   実行: `$env:Path += `";$npmPath`"" -ForegroundColor Yellow
+    if ($npmPath) {
+        Write-Host "   実行: `$env:Path += `";$npmPath`"" -ForegroundColor Yellow
+    }
     exit 1
 }
 

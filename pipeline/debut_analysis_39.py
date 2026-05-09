@@ -27,10 +27,9 @@ import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine, text
 from datetime import datetime
+from pipeline.config import CSV_FEATURES, DATA_DIR, DB_URL
 
-BASE_DIR = "D:\\keiba_ai"
-DB_URL   = "postgresql://postgres:trust@localhost:5433/mykeibadb"
-CACHE_PATH = f"{BASE_DIR}\\data\\debut_race_codes.json"
+CACHE_PATH = os.path.join(DATA_DIR, "debut_race_codes.json")
 
 MIN_DEBUT_RACES = 5   # 統計の信頼性確保のための最低出走数
 
@@ -41,7 +40,7 @@ MIN_DEBUT_RACES = 5   # 統計の信頼性確保のための最低出走数
 
 def _load_debut_race_codes(engine, use_cache: bool = True) -> set:
     """race_shosai から新馬戦 race_code の集合を取得する。"""
-    os.makedirs(f"{BASE_DIR}\\data", exist_ok=True)
+    os.makedirs(DATA_DIR, exist_ok=True)
 
     if use_cache and os.path.exists(CACHE_PATH):
         age_h = (datetime.now().timestamp() - os.path.getmtime(CACHE_PATH)) / 3600
@@ -277,7 +276,7 @@ def run_debut_analysis(year_from: int = 2010, save: bool = True) -> pd.DataFrame
     print("🐴 新馬戦強化分析 (debut_analysis_39)")
     print("="*55)
 
-    feat_path = f"{BASE_DIR}\\keiba_data_features.csv"
+    feat_path = CSV_FEATURES
     if not os.path.exists(feat_path):
         print("  ⚠️ keiba_data_features.csv なし")
         return pd.DataFrame()

@@ -215,15 +215,14 @@ class BaseAgent(abc.ABC):
     def _write_quarantine_db(self, meta: AgentMeta, reason: str) -> None:
         try:
             import psycopg2
-            import os
-            db_url = os.getenv("KEIBA_DB_URL", "postgresql://postgres:trust@localhost:5433/mykeibadb")
+            from pipeline.config import DB_URL
             sql = """
                 INSERT INTO quarantine_records
                     (trace_id, run_tag, agent_id, data_snapshot_id, reason, created_at)
                 VALUES (%(trace_id)s, %(run_tag)s, %(agent_id)s,
                         %(snap)s, %(reason)s, now())
             """
-            conn = psycopg2.connect(db_url)
+            conn = psycopg2.connect(DB_URL)
             with conn, conn.cursor() as cur:
                 cur.execute(sql, {
                     "trace_id": meta.trace_id,

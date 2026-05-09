@@ -19,7 +19,7 @@ if /i not "%confirm%"=="y" (
     exit /b
 )
 
-cd /d D:\keiba_ai
+cd /d "%~dp0"
 del /f model_v2.pkl 2>nul && echo   model_v2.pkl 削除完了 || echo   model_v2.pkl スキップ
 del /f model_v3.pkl 2>nul && echo   model_v3.pkl 削除完了 || echo   model_v3.pkl スキップ
 del /f model_v4.pkl 2>nul && echo   model_v4.pkl 削除完了 || echo   model_v4.pkl スキップ

@@ -24,9 +24,7 @@ import numpy as np
 from sqlalchemy import create_engine, text
 from datetime import datetime
 import os
-
-BASE_DIR = "D:\\keiba_ai"
-DB_URL   = "postgresql://postgres:trust@localhost:5433/mykeibadb"
+from pipeline.config import CSV_FEATURES, DB_URL
 
 # 会場コード → 列名プレフィックスのマップ
 VENUE_MAP = {
@@ -345,7 +343,7 @@ def run_trainer_analysis(year_from: int = 2020, save: bool = True) -> pd.DataFra
     print("🎓 調教師特性分析")
     print("="*55)
 
-    feat_path = f"{BASE_DIR}\\keiba_data_features.csv"
+    feat_path = CSV_FEATURES
     if not os.path.exists(feat_path):
         print("  ⚠️ keiba_data_features.csv なし")
         return pd.DataFrame()

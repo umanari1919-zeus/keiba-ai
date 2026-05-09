@@ -15,22 +15,20 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import pathlib
 import subprocess
 import sys
 from datetime import datetime, timezone
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
+from .path_config import BASE_DIR, DATA_DIR
+from pipeline.config import DB_URL
 
 log = logging.getLogger(__name__)
 
-BASE_DIR   = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
 FEAT_FILE  = BASE_DIR / "keiba_data_features.csv"
 MODEL_FILE = BASE_DIR / "model_v8.pkl"
-RESULT_FILE = BASE_DIR / "data" / "walkforward_result.json"
-DB_URL = os.getenv("KEIBA_DB_URL", "postgresql://postgres:trust@localhost:5433/mykeibadb")
+RESULT_FILE = DATA_DIR / "walkforward_result.json"
 
 
 class BacktestAgent(BaseAgent):

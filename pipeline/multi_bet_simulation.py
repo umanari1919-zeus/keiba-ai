@@ -1,13 +1,17 @@
 import pandas as pd
 import numpy as np
 import pickle
+import os
 from datetime import datetime
 from sqlalchemy import create_engine, text
+from pipeline.config import BASE_DIR, CSV_FEATURES, DB_URL
+from pipeline.native_runtime import ensure_native_runtime
 
 def multi_bet_simulation(year=2025):
     print(f"🎯 [{datetime.now()}] 全馬券種シミュレーション開始...")
-    
-    with open("D:\\keiba_ai\\model_v8.pkl", "rb") as f:
+    ensure_native_runtime()
+
+    with open(os.path.join(BASE_DIR, "model_v8.pkl"), "rb") as f:
         saved = pickle.load(f)
     
     lgb_model = saved['lgb_model']
@@ -16,7 +20,7 @@ def multi_bet_simulation(year=2025):
     le = saved['le']
     features = saved['features']
     
-    df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df = pd.read_csv(CSV_FEATURES,
                      encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     df = df.fillna(0)
     test_df = df[df['kaisai_nen'] == year].copy()
@@ -31,9 +35,7 @@ def multi_bet_simulation(year=2025):
         ensemble_proba.argmax(axis=1)
     )
 
-    engine = create_engine(
-        "postgresql://postgres:trust@localhost:5433/mykeibadb"
-    )
+    engine = create_engine(DB_URL)
     
     print("💰 オッズデータ取得中...")
     with engine.connect() as conn:

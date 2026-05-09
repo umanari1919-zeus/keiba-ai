@@ -68,6 +68,8 @@ SCHEDULE_ITEMS = [
     ("月04:00", "知識ベース更新", "週次"),
 ]
 
+from pathlib import Path
+
 NAV_ITEMS = [
     ("🏇", "今日の予想"),
     ("📊", "成績サマリー"),
@@ -79,5 +81,5 @@ NAV_ITEMS = [
 
 DOWJP = ["月", "火", "水", "木", "金", "土", "日"]
 
-BASE_PATH = "D:\\keiba_ai"
+BASE_PATH = str(Path(__file__).resolve().parents[3])
 YEAR = 2026  # Updated dynamically at runtime

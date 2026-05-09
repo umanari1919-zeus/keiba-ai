@@ -5,6 +5,10 @@ REM ワンクリック起動スクリプト
 setlocal enabledelayedexpansion
 chcp 65001 > nul
 
+set "SCRIPT_DIR=%~dp0"
+for %%I in ("%SCRIPT_DIR%..") do set "PROJECT_ROOT=%%~fI"
+cd /d "%PROJECT_ROOT%"
+
 title 🚀 OpenCode 自動セットアップ - うまなり地蔵AI
 color 0A
 
@@ -30,7 +34,7 @@ if not exist ".env" (
 if not exist "tools\RUN-ALL.ps1" (
     color 0C
     echo ❌ エラー: tools\RUN-ALL.ps1 が見つかりません
-    echo    このバッチファイルは D:\keiba_ai\ ディレクトリから実行してください
+    echo    プロジェクトルートを確認してください: %PROJECT_ROOT%
     echo.
     pause
     exit /b 1

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Keiba Daily Pipeline"
+  short_description: "Run and check the daily JRA prediction pipeline safely."

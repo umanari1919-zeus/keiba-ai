@@ -10,8 +10,7 @@ from scipy.stats import entropy as scipy_entropy
 from typing import List, Dict
 import json, os
 from datetime import datetime
-
-BASE_DIR = "D:\\keiba_ai"
+from pipeline.config import BASE_DIR, CSV_FEATURES, DATA_DIR
 
 # 荒れやすさ指標の重み
 UPSET_W = {
@@ -176,7 +175,7 @@ def run_race_selector(year: int = None) -> dict:
     print("🏇 レース価値スコアリングシステム")
     print("="*55)
 
-    feat_path = f"{BASE_DIR}\\keiba_data_features.csv"
+    feat_path = CSV_FEATURES
     if not os.path.exists(feat_path):
         print("  ⚠️ 特徴量ファイルなし")
         return {}
@@ -205,10 +204,12 @@ def run_race_selector(year: int = None) -> dict:
                   f"荒れ={r['upset_score']:.2f} 価値={r['value_score']:.3f} "
                   f"オッズ{r['fav_odds']:.1f}〜{r['max_odds']:.1f}倍")
 
-    os.makedirs(f"{BASE_DIR}\\data", exist_ok=True)
-    ranked.to_csv(f"{BASE_DIR}\\data\\race_ranking_{year}.csv",
+    os.makedirs(DATA_DIR, exist_ok=True)
+    ranking_path = os.path.join(DATA_DIR, f"race_ranking_{year}.csv")
+    ranked.to_csv(ranking_path,
                   index=False, encoding='utf-8-sig')
-    with open(f"{BASE_DIR}\\data\\race_selector_{year}.json", 'w', encoding='utf-8') as f:
+    selector_path = os.path.join(DATA_DIR, f"race_selector_{year}.json")
+    with open(selector_path, 'w', encoding='utf-8') as f:
         json.dump(ranked.head(50).to_dict('records'), f,
                   ensure_ascii=False, indent=2, default=str)
     print(f"\n  💾 保存: data/race_ranking_{year}.csv")

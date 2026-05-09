@@ -1,10 +1,46 @@
-import psycopg2, pandas as pd, numpy as np, lightgbm as lgb, pathlib, warnings
+import argparse
+import importlib.util
+import pathlib
+import sys
+import warnings
+
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from pipeline.config import BASE_DIR, DB_CONFIG
+from pipeline.native_runtime import ensure_native_runtime
+
+parser = argparse.ArgumentParser(description="うまなり地蔵AI v2 血統・調教込みモデル学習")
+parser.add_argument("--dry-run", action="store_true", help="依存と出力先だけ確認して終了")
+args, _unknown = parser.parse_known_args()
+
+required_modules = ["psycopg2", "pandas", "numpy", "lightgbm", "sklearn"]
+missing = [name for name in required_modules if importlib.util.find_spec(name) is None]
+model_path = pathlib.Path(BASE_DIR) / "pipeline_v2" / "model_lgbm_v2.txt"
+logs_dir = pathlib.Path(BASE_DIR) / "pipeline_v2" / "logs"
+
+if args.dry_run:
+    print("train_model_v2 dry-run")
+    print(f"  BASE_DIR: {BASE_DIR}")
+    print(f"  MODEL   : {model_path}")
+    print(f"  missing : {missing or 'none'}")
+    sys.exit(0)
+
+if missing:
+    print(f"依存不足のため学習できません: {', '.join(missing)}")
+    sys.exit(1)
+
+ensure_native_runtime()
+
+import psycopg2, pandas as pd, numpy as np, lightgbm as lgb
 from sklearn.metrics import roc_auc_score
 warnings.filterwarnings("ignore")
 
-DB=dict(host="localhost",port=5433,dbname="mykeibadb",user="postgres",password="")
-MODEL_PATH=r"D:\keiba_ai\pipeline_v2\model_lgbm_v2.txt"
-pathlib.Path(r"D:\keiba_ai\pipeline_v2\logs").mkdir(exist_ok=True)
+DB = DB_CONFIG
+MODEL_PATH = str(model_path)
+logs_dir.mkdir(exist_ok=True)
 
 print("="*60)
 print("うまなり地蔵AI v2 - 血統・調教込みモデル学習")
@@ -17,7 +53,7 @@ sql_main="""
 SELECT u.race_code,u.kaisai_nen,u.kaisai_gappi,u.keibajo_code,u.race_bango,u.umaban,
     u.ketto_toroku_bango,u.barei,u.seibetsu_code,u.hinshu_code,u.kishu_code,
     u.kishu_minarai_code,u.chokyoshi_code,u.futan_juryo,u.bataiju,u.zogen_fugo,u.zogen_sa,
-    u.tansho_odds,u.tansho_ninkijun,u.kakutei_chakujun,u.soha_time,u.kohan_3f,u.kohan_4f,
+    u.tansho_odds,u.kakutei_chakujun,u.soha_time,u.kohan_3f,u.kohan_4f,
     u.corner4_juni,u.blinker_shiyo_kubun,u.ijo_kubun_code,
     r.kyori,r.track_code,r.tenko_code,r.shiba_babajotai_code,r.dirt_babajotai_code,r.toroku_tosu
 FROM umagoto_race_joho u
@@ -84,8 +120,7 @@ df["bataiju_n"]    =df["bataiju"].apply(si)
 df["zogen_sa_n"]   =df["zogen_sa"].apply(si)
 df["zogen_fugo_n"] =df["zogen_fugo"].apply(lambda x:-1 if str(x).strip()=="-" else 1)
 df["bataiju_diff"] =df["zogen_sa_n"]*df["zogen_fugo_n"]
-df["odds_n"]       =df["tansho_odds"].apply(lambda x:si(x)/10)
-df["ninki_n"]      =df["tansho_ninkijun"].apply(si)
+df["eval_odds_decimal"] = df["tansho_odds"].apply(lambda x: si(x) / 10)
 df["kyori_n"]      =df["kyori"].apply(si)
 df["toroku_n"]     =df["toroku_tosu"].apply(si)
 df["umaban_n"]     =df["umaban"].apply(si)
@@ -119,13 +154,12 @@ df["kishu_winrate"]=(df["kishu_wins"]/(df["kishu_rides"]+1)).fillna(0)
 df["trainer_wins"] =df.groupby("chokyoshi_code")["win_flag"].cumsum()-df["win_flag"]
 df["trainer_rides"]=df.groupby("chokyoshi_code").cumcount()
 df["trainer_winrate"]=(df["trainer_wins"]/(df["trainer_rides"]+1)).fillna(0)
-df["odds_rank"] =df.groupby("race_code")["odds_n"].rank()
 df["futan_rank"]=df.groupby("race_code")["futan_n"].rank()
 
 print("\n[5/6] 学習・検証分割...")
 FEATURES=[
     "barei_n","seibetsu_n","hinshu_n","futan_n","bataiju_n","bataiju_diff",
-    "minarai_n","blinker_n","ijo_n","odds_n","ninki_n","odds_rank",
+    "minarai_n","blinker_n","ijo_n",
     "kyori_n","track_n","tenko_n","baba_shiba_n","baba_dirt_n",
     "keibajo_n","race_bango_n","toroku_n","umaban_n","month",
     "kohan3f_n","kohan4f_n","corner4_n",
@@ -161,7 +195,7 @@ def simulate(df_s,label):
     for rc,g in df_s.groupby("race_code"):
         if len(g)<2: continue
         top=g.loc[g["pred"].idxmax()]
-        odds=top["odds_n"]
+        odds=top["eval_odds_decimal"]
         win=int(top["win_flag"]==1)
         res.append({"win":win,"ret":odds*100 if win else 0})
     r=pd.DataFrame(res)

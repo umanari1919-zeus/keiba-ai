@@ -9,18 +9,15 @@ from __future__ import annotations
 
 import logging
 import os
-import pathlib
 import subprocess
 import sys
 import uuid
 
 from .base_agent import BaseAgent, AgentMeta
 from .audit_logger import sha256_of
+from .path_config import BASE_DIR, DATA_DIR
 
 log = logging.getLogger(__name__)
-
-BASE_DIR = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-DATA_DIR = BASE_DIR / "data"
 
 # 実行するスクリプトと説明（順序保証）
 FEATURE_SCRIPTS: list[tuple[str, str]] = [

@@ -1,13 +1,10 @@
 import pandas as pd
 import numpy as np
-from sqlalchemy import create_engine
-
-engine = create_engine(
-    "postgresql://postgres:trust@localhost:5433/mykeibadb"
-)
+from pipeline.config import CSV_FEATURES, CSV_RAW, CSV_READ_OPTS, LEAKY_DERIVED_FEATURE_COLUMNS
 
 print("📂 データ読み込み中...")
-df = pd.read_csv("D:\\keiba_ai\\keiba_data.csv", encoding="utf-8-sig")
+df = pd.read_csv(CSV_RAW, **CSV_READ_OPTS)
+df = df.drop(columns=[c for c in LEAKY_DERIVED_FEATURE_COLUMNS if c in df.columns])
 
 # クレンジング
 df['bataiju'] = pd.to_numeric(df['bataiju'], errors='coerce')
@@ -25,12 +22,6 @@ print("⚙️ 過去成績の特徴量を計算中...（少し時間がかかり
 # 馬ごとの過去3走の平均着順
 df['past3_avg_chakujun'] = (
     df.groupby('ketto_toroku_bango')['kakutei_chakujun']
-    .transform(lambda x: x.shift(1).rolling(3, min_periods=1).mean())
-)
-
-# 馬ごとの過去3走の平均オッズ
-df['past3_avg_odds'] = (
-    df.groupby('ketto_toroku_bango')['tansho_odds']
     .transform(lambda x: x.shift(1).rolling(3, min_periods=1).mean())
 )
 
@@ -52,9 +43,8 @@ print("✅ 特徴量計算完了！")
 print(f"件数：{len(df):,}件")
 
 # 保存
-df.to_csv("D:\\keiba_ai\\keiba_data_features.csv", 
-          index=False, encoding="utf-8-sig")
-print("💾 keiba_data_features.csv に保存しました！")
+df.to_csv(CSV_FEATURES, index=False, encoding="utf-8-sig")
+print(f"💾 {CSV_FEATURES} に保存しました！")
 
 # 確認
 print("\n📋 新しい特徴量の確認:")

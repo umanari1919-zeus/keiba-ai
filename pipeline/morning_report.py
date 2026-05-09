@@ -24,10 +24,9 @@ import sys
 import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from pipeline.config import BASE_DIR, DATA_DIR
 
 JST      = ZoneInfo("Asia/Tokyo")
-BASE_DIR = "D:\\keiba_ai"
-DATA_DIR = os.path.join(BASE_DIR, "data")
 RPT_DIR  = os.path.join(BASE_DIR, "reports")
 
 KEIBAJO = {
@@ -92,6 +91,63 @@ def _load_picks(date_str: str = None) -> dict:
         return {}
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
+def _kelly_bet(wp: float, odds: float, bankroll: float,
+               fraction: float = 0.10) -> int:
+    """Kelly criterion bet size (fractional Kelly)."""
+    if odds <= 1 or wp <= 0:
+        return 0
+    b = odds - 1
+    q = 1 - wp
+    edge = wp * b - q
+    if edge <= 0:
+        return 0
+    kelly = edge / b
+    bet = int(bankroll * kelly * fraction)
+    return max(0, min(bet, int(bankroll * 0.05)))
+
+
+def _load_predictions_csv(date_str: str) -> list:
+    """predictions_{date}.csv からレースごとの本命馬を読み込む。"""
+    path = os.path.join(DATA_DIR, f"predictions_{date_str}.csv")
+    if not os.path.exists(path):
+        return []
+    try:
+        df = pd.read_csv(path, encoding="utf-8-sig")
+        if 'win_prob' not in df.columns:
+            return []
+        top = (df.sort_values('win_prob', ascending=False)
+                 .drop_duplicates('race_code')
+                 .sort_values('win_prob', ascending=False)
+                 .head(20))
+        bkroll = _load_bankroll()
+        current = bkroll.get("current", 10000)
+        records = []
+        for _, row in top.iterrows():
+            odds = float(row.get("odds", 0))
+            wp = float(row.get("win_prob", 0)) / 100.0
+            ev = wp * odds - 1.0 if odds > 0 else 0
+            kb = _kelly_bet(wp, odds, current) if ev > 0.15 else 0
+            records.append({
+                "race_code":       str(row.get("race_code", "")),
+                "bamei":           str(row.get("bamei", "")),
+                "umaban":          row.get("umaban", ""),
+                "kishumei":        str(row.get("kishumei_ryakusho", "")),
+                "odds":            odds,
+                "odds_estimated":  bool(row.get("odds_estimated", False)),
+                "ninki":           int(row.get("ninki", 0)),
+                "win_probability": wp,
+                "expected_value":  ev,
+                "race_type":       "default",
+                "kelly_bet":       kb,
+                "ticket_type":     "単勝",
+                "comment":         f"推定{int(row.get('ninki',0))}人気" if row.get("odds_estimated") else "",
+            })
+        return records
+    except Exception as e:
+        print(f"  [morning] predictions load error: {e}")
+        return []
 
 
 def _load_ev_csv(year: int = None) -> list:
@@ -224,16 +280,23 @@ def generate_report(date_str: str = None, save: bool = True,
     from_csv   = False
 
     if not approved:
-        # フォールバック: ev_analysis CSV
-        year = int(date_str[:4])
-        approved = _load_ev_csv(year)
+        # フォールバック1: 当日 predictions CSV
+        approved = _load_predictions_csv(date_str)
         from_csv = True
         if approved:
-            lines.append(f"  ⚠️  agent_picks_{date_str}.json なし → ev_analysis_{year}.csv を使用")
+            has_est = any(b.get("odds_estimated") for b in approved)
+            tag = " (推定オッズ)" if has_est else ""
+            lines.append(f"  📊 predictions_{date_str}.csv から生成{tag}")
         else:
-            lines.append("  ⚠️  予想データがありません。")
-            lines.append("  python run_all.py --morning  を実行してください。")
-            lines.append(sep)
+            # フォールバック2: ev_analysis CSV
+            year = int(date_str[:4])
+            approved = _load_ev_csv(year)
+            if approved:
+                lines.append(f"  ⚠️  agent_picks_{date_str}.json なし → ev_analysis_{year}.csv を使用")
+            else:
+                lines.append("  ⚠️  予想データがありません。")
+                lines.append("  python run_all.py --morning  を実行してください。")
+                lines.append(sep)
             report = "\n".join(lines)
             if print_report:
                 print(report)

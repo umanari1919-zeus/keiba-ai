@@ -18,17 +18,16 @@ import importlib.util
 import json
 import logging
 import os
-import pathlib
 from datetime import datetime, timezone
 from typing import Any
 
 from .base_agent import BaseAgent, AgentMeta
+from .path_config import BASE_DIR, DATA_DIR
 
 log = logging.getLogger(__name__)
 
-BASE_DIR    = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
 FEAT_FILE   = BASE_DIR / "keiba_data_features.csv"
-RESULT_FILE = BASE_DIR / "data" / "backtest_summary.json"
+RESULT_FILE = DATA_DIR / "backtest_summary.json"
 
 
 class BacktestEngineAgent(BaseAgent):

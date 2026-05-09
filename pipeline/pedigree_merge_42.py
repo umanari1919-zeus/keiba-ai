@@ -19,11 +19,11 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import pathlib
 import sys
 
 import pandas as pd
+from pipeline.config import BASE_DIR as CONFIG_BASE_DIR, CSV_FEATURES, DB_URL
 
 log = logging.getLogger(__name__)
 logging.basicConfig(
@@ -31,9 +31,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
-BASE_DIR  = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-FEAT_CSV  = BASE_DIR / "keiba_data_features.csv"
-DB_URL    = os.getenv("KEIBA_DB_URL", "postgresql://postgres:trust@localhost:5433/mykeibadb")
+BASE_DIR  = pathlib.Path(CONFIG_BASE_DIR)
+FEAT_CSV  = pathlib.Path(CSV_FEATURES)
 
 # pedigree_metrics から取得する列
 PEDIGREE_COLS = [

@@ -16,6 +16,8 @@ import streamlit as st
 from datetime import datetime
 from pathlib import Path
 
+from pipeline.config import BASE_DIR
+
 try:
     from utils.theme import apply_theme
     apply_theme()
@@ -32,7 +34,7 @@ st.set_page_config(
 st.title("📊 モデル比較")
 st.markdown("MLflow 実験トラッキングによるモデルバージョン比較・メトリクス推移")
 
-BASE_PATH = os.getenv("KEIBA_BASE", r"D:\keiba_ai")
+BASE_PATH = os.getenv("KEIBA_BASE", BASE_DIR)
 
 
 # ── データ読み込み ──────────────────────────────────────────────────
@@ -240,4 +242,4 @@ if meta_files:
 # ── フッター ──────────────────────────────────────────────────────
 
 st.markdown("---")
-st.caption("💡 MLflow UI: `mlflow ui --backend-store-uri file:///D:/keiba_ai/mlflow_tracking`")
+st.caption(f"💡 MLflow UI: `mlflow ui --backend-store-uri file:///{Path(BASE_PATH).as_posix()}/mlflow_tracking`")

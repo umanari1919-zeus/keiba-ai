@@ -19,17 +19,20 @@ import sys
 import uuid
 from datetime import datetime
 
-_BASE_DIR = pathlib.Path(r"D:\keiba_ai")
-# BASE_DIR を必ず先頭に (worktree より優先)
-if str(_BASE_DIR) in sys.path:
-    sys.path.remove(str(_BASE_DIR))
-sys.path.insert(0, str(_BASE_DIR))
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+# プロジェクトルートを必ず先頭に (worktree より優先)
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
 
-BASE_DIR = pathlib.Path("D:/keiba_ai")
-DATA_DIR = BASE_DIR / "data"
+from pipeline.config import BASE_DIR as CONFIG_BASE_DIR, DATA_DIR as CONFIG_DATA_DIR
+
+BASE_DIR = pathlib.Path(CONFIG_BASE_DIR)
+DATA_DIR = pathlib.Path(CONFIG_DATA_DIR)
 BASE     = pathlib.Path(__file__).parent
 LOG_DIR  = BASE / "logs"
 LOG_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(exist_ok=True)
 
 today = datetime.now().strftime("%Y%m%d")
 logging.basicConfig(
@@ -43,7 +46,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-def _load_candidate_bets() -> list:
+def _load_candidate_bets(*, dry_run: bool = False) -> list:
     """07_trade.py が保存したトレードログから candidate_bets を読み込む。"""
     for pattern in [
         DATA_DIR / f"trade_log_{today}.json",
@@ -52,12 +55,18 @@ def _load_candidate_bets() -> list:
         if pattern.exists():
             try:
                 data = json.loads(pattern.read_text(encoding="utf-8"))
-                bets = data.get("candidate_bets", data if isinstance(data, list) else [])
+                if isinstance(data, list):
+                    bets = data
+                else:
+                    bets = data.get("candidate_bets", [])
                 log.info("candidate_bets 読み込み: %s (%d件)", pattern.name, len(bets))
                 return bets
             except Exception as exc:
                 log.warning("読み込みエラー: %s", exc)
-    log.warning("candidate_bets ファイルが見つかりません")
+    if dry_run:
+        log.info("candidate_bets ファイルなし: dry-run のため空入力で続行")
+    else:
+        log.warning("candidate_bets ファイルが見つかりません")
     return []
 
 
@@ -73,7 +82,7 @@ def main(trace_id: str = "", run_tag: str = "", dry_run: bool = False) -> int:
         log.error("agents インポート失敗: %s", exc)
         return 1
 
-    candidate_bets = _load_candidate_bets()
+    candidate_bets = _load_candidate_bets(dry_run=dry_run)
 
     meta   = AgentMeta(trace_id=trace_id, run_tag=run_tag)
     result = PortfolioAgent(dry_run=dry_run).execute(meta, {

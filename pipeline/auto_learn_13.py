@@ -12,15 +12,26 @@ import shutil
 from datetime import datetime
 
 from sqlalchemy import create_engine, text
+from pipeline.config import BASE_DIR, DATA_DIR, DB_URL
+from pipeline.native_runtime import ensure_native_runtime
 
-PERF_FILE    = "D:\\keiba_ai\\data\\model_performance.json"
-MODEL_FILE   = "D:\\keiba_ai\\model_v8.pkl"
-DB_URL       = "postgresql://postgres:trust@localhost:5433/mykeibadb"
+ensure_native_runtime()
+
+PERF_FILE    = os.path.join(DATA_DIR, "model_performance.json")
+MODEL_FILE   = os.path.join(BASE_DIR, "model_v8.pkl")
 
 RETRAIN_THRESHOLD    = 0.80   # 回収率80%未満で再学習検討
 RETRAIN_WINDOW       = 3      # 直近N回の平均で判定
 MIN_EVAL_SAMPLES     = 20     # 評価に必要な最低サンプル数
 BACKUP_KEEP          = 5      # バックアップを何世代保持するか
+
+
+def _env_truthy(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _auto_retrain_allowed(live: bool = False) -> bool:
+    return live or _env_truthy("KEIBA_AUTO_RETRAIN_LIVE")
 
 
 # ──────────────────────────────────────────────
@@ -166,17 +177,25 @@ def should_retrain():
 
 def _cleanup_old_backups():
     """古いバックアップファイルを削除して最新N世代のみ保持する。"""
-    import glob
-    pattern = MODEL_FILE.replace('.pkl', '_backup_*.pkl')
-    backups = sorted(glob.glob(pattern))
+    from pathlib import Path
+
+    model_path = Path(MODEL_FILE).resolve()
+    backups = sorted(model_path.parent.glob(f"{model_path.stem}_backup_*.pkl"))
     while len(backups) > BACKUP_KEEP:
-        old = backups.pop(0)
-        os.remove(old)
-        print(f"  🗑️ 古いバックアップを削除：{os.path.basename(old)}")
+        old = backups.pop(0).resolve()
+        if old.parent != model_path.parent or not old.name.startswith(f"{model_path.stem}_backup_"):
+            print(f"  ⚠️ 想定外のバックアップパスをスキップ：{old}")
+            continue
+        old.unlink()
+        print(f"  🗑️ 古いバックアップを削除：{old.name}")
 
 
-def auto_retrain():
+def auto_retrain(*, live: bool = False):
     """モデルをバックアップしてから再学習する。"""
+    if not _auto_retrain_allowed(live):
+        print("  ⏩ DRY-RUN: 自動再学習は --live または KEIBA_AUTO_RETRAIN_LIVE=1 が必要です")
+        return False
+
     print(f"\n⚡ [{datetime.now()}] 自動再学習を開始します...")
 
     backup = MODEL_FILE.replace(
@@ -189,13 +208,14 @@ def auto_retrain():
     train_model()
 
     print(f"  ✅ 再学習完了：{datetime.now()}")
+    return True
 
 
 # ──────────────────────────────────────────────
 # メイン実行
 # ──────────────────────────────────────────────
 
-def run_auto_learn(simulation_csv="D:\\keiba_ai\\simulation_2025.csv"):
+def run_auto_learn(simulation_csv=None, *, live: bool = False):
     """
     自動学習サイクルを1回実行する。
 
@@ -207,6 +227,8 @@ def run_auto_learn(simulation_csv="D:\\keiba_ai\\simulation_2025.csv"):
     print(f"\n{'='*55}")
     print(f"🤖 自動学習・自己改善システム")
     print(f"{'='*55}")
+    if simulation_csv is None:
+        simulation_csv = os.path.join(BASE_DIR, "simulation_2025.csv")
 
     # Step 1: 実績取得
     print("\n📥 直近レース結果を取得中...")
@@ -216,8 +238,8 @@ def run_auto_learn(simulation_csv="D:\\keiba_ai\\simulation_2025.csv"):
         needs_retrain, reason = should_retrain()
         print(f"\n🔍 再学習判定：{reason}")
         if needs_retrain:
-            auto_retrain()
-        return needs_retrain
+            return auto_retrain(live=live)
+        return False
 
     print(f"  取得件数：{len(actual_df):,}件")
 
@@ -244,8 +266,7 @@ def run_auto_learn(simulation_csv="D:\\keiba_ai\\simulation_2025.csv"):
     print(f"\n🔍 再学習判定：{reason}")
 
     if needs_retrain:
-        auto_retrain()
-        return True
+        return auto_retrain(live=live)
 
     print("✅ 再学習不要（モデル良好）")
     return False
@@ -281,7 +302,13 @@ def show_performance_trend():
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--live", action="store_true", help="自動再学習を許可（デフォルトはdry-run）")
+    args = parser.parse_args()
+
     show_performance_trend()
-    retrained = run_auto_learn()
+    retrained = run_auto_learn(live=args.live)
     if retrained:
         print("\n🔄 モデルが更新されました。次回予測から新モデルが使用されます。")

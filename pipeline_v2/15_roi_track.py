@@ -18,13 +18,13 @@ import logging
 import pathlib
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
-_BASE_DIR = pathlib.Path(r"D:\keiba_ai")
-# BASE_DIR を必ず先頭に (worktree より優先)
-if str(_BASE_DIR) in sys.path:
-    sys.path.remove(str(_BASE_DIR))
-sys.path.insert(0, str(_BASE_DIR))
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+# プロジェクトルートを必ず先頭に (worktree より優先)
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 BASE    = pathlib.Path(__file__).parent
 LOG_DIR = BASE / "logs"
@@ -81,7 +81,7 @@ def main(trace_id: str = "", run_tag: str = "", dry_run: bool = False) -> int:
                     "consecutive_losses": out.get("consecutive_losses", 0),
                     "daily_summary":      out.get("daily_summary", {}),
                     "alerts":             out.get("alerts", []),
-                    "timestamp":          datetime.utcnow().isoformat() + "Z",
+                    "timestamp":          datetime.now(timezone.utc).isoformat(),
                 },
                 ensure_ascii=False, indent=2,
             ),

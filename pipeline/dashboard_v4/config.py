@@ -2,11 +2,13 @@
 Configuration for Dashboard v4
 """
 import os
+import sys
+from pathlib import Path
 from datetime import datetime
 
 # Paths
-BASE_PATH = r"D:\keiba_ai"
-PYTHON_EXE = r"C:\Users\uchih\AppData\Local\Programs\Python\Python313\python.exe"
+BASE_PATH = str(Path(__file__).resolve().parent.parent.parent)
+PYTHON_EXE = os.getenv("KEIBA_PYTHON_EXE", sys.executable)
 
 # Runtime
 YEAR = datetime.now().year

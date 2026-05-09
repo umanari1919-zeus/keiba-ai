@@ -5,11 +5,14 @@
 import pandas as pd
 import numpy as np
 import pickle
+import os
 from datetime import datetime
 
 from pipeline.kelly_bankroll_09 import load_bankroll, calculate_kelly_bet
 from pipeline.ev_engine_10 import build_ev_dataframe, extract_win_probabilities
 from pipeline.ensemble_utils import load_ensemble_weights
+from pipeline.config import BASE_DIR, CSV_FEATURES
+from pipeline.native_runtime import ensure_native_runtime
 
 # 各馬券種の設定（推定的中確率補正・最低オッズ・ケリー分数）
 BET_CONFIG = {
@@ -100,8 +103,9 @@ def optimize_race_portfolio(p1, p2, p3,
 
 def run_portfolio_optimization(year=2025):
     print(f"📊 [{datetime.now()}] 馬券ポートフォリオ最適化開始...")
+    ensure_native_runtime()
 
-    with open("D:\\keiba_ai\\model_v8.pkl", "rb") as f:
+    with open(os.path.join(BASE_DIR, "model_v8.pkl"), "rb") as f:
         saved = pickle.load(f)
 
     lgb_model = saved['lgb_model']
@@ -111,7 +115,7 @@ def run_portfolio_optimization(year=2025):
     features  = saved['features']
     weights   = load_ensemble_weights(saved)
 
-    df = pd.read_csv("D:\\keiba_ai\\keiba_data_features.csv",
+    df = pd.read_csv(CSV_FEATURES,
                      encoding="utf-8-sig", low_memory=False, on_bad_lines='skip')
     df = df.fillna(0)
     test_df = df[df['kaisai_nen'] == year].copy()
@@ -195,7 +199,7 @@ def run_portfolio_optimization(year=2025):
         print(f"\n  総投資予定額：{grand_total:,.0f}円")
         print(f"  対象レース数：{len(results_df)}R")
 
-        out = f"D:\\keiba_ai\\portfolio_{year}.csv"
+        out = os.path.join(BASE_DIR, f"portfolio_{year}.csv")
         results_df.to_csv(out, index=False, encoding="utf-8-sig")
         print(f"\n💾 {out} に保存しました")
     else:

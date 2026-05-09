@@ -1,7 +1,7 @@
 """
 setup_pipeline_v2.py
-実行するだけで D:\keiba_ai\pipeline_v2\ の全フォルダ・ファイルを作成します。
-既存の pipeline\ フォルダには一切触れません。
+実行するだけで <project_root>/pipeline_v2/ の全フォルダ・ファイルを作成します。
+既存の pipeline/ フォルダには一切触れません。
 
 実行方法:
   python setup_pipeline_v2.py
@@ -11,7 +11,8 @@ import os
 import json
 import pathlib
 
-BASE = pathlib.Path(r"D:\keiba_ai\pipeline_v2")
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent
+BASE = PROJECT_ROOT / "pipeline_v2"
 
 # ============================================================
 # 1. フォルダ構成
@@ -128,7 +129,7 @@ auto_stop条件に引っかかった場合は即座に停止してログに記�
   python 00_orchestrator.py
 
 Windows タスクスケジューラ登録例:
-  毎日 04:00 に python D:\keiba_ai\pipeline_v2\00_orchestrator.py を実行
+  毎日 04:00 に python <project_root>/pipeline_v2/00_orchestrator.py を実行
 """
 
 import subprocess
@@ -354,11 +355,14 @@ def main():
                 f.write(STUB_TEMPLATE.format(filename=filename, task_id=task_id))
             print(f"  [STUB] {path}")
 
-    # オーケストレーター作成
+    # オーケストレーター作成（既存があれば上書きしない）
     orch_path = BASE / "00_orchestrator.py"
-    with open(orch_path, "w", encoding="utf-8") as f:
-        f.write(ORCHESTRATOR)
-    print(f"  [MAIN] {orch_path}")
+    if orch_path.exists():
+        print(f"  [SKIP] {orch_path}  ← 既存あり")
+    else:
+        with open(orch_path, "w", encoding="utf-8") as f:
+            f.write(ORCHESTRATOR)
+        print(f"  [MAIN] {orch_path}")
 
     print()
     print("=" * 60)
@@ -366,10 +370,10 @@ def main():
     print()
     print("次のステップ:")
     print("  1. 動作確認:")
-    print(r"     python D:\keiba_ai\pipeline_v2\00_orchestrator.py")
+    print(f"     python {BASE / '00_orchestrator.py'}")
     print()
     print("  2. Windowsタスクスケジューラに登録（毎日04:00）:")
-    print(r"     python D:\keiba_ai\pipeline_v2\00_orchestrator.py")
+    print(f"     python {BASE / '00_orchestrator.py'}")
     print()
     print("  3. 次に実装するステージを決める（推奨: 05_explain.py）")
     print("=" * 60)

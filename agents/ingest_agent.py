@@ -18,12 +18,11 @@ from datetime import datetime, timezone
 
 from .base_agent import BaseAgent, AgentMeta, AgentResult
 from .audit_logger import sha256_of
+from .path_config import BASE_DIR, DATA_DIR, PIPELINE_DIR
 
 log = logging.getLogger(__name__)
 
-BASE_DIR    = pathlib.Path(os.getenv("KEIBA_BASE", "D:/keiba_ai"))
-PIPELINE    = BASE_DIR / "pipeline"
-DATA_DIR    = BASE_DIR / "data"
+PIPELINE = PIPELINE_DIR
 
 
 class IngestAgent(BaseAgent):
@@ -94,14 +93,13 @@ class IngestAgent(BaseAgent):
     def _register_snapshot(self, snap_id: str, files: list, meta: AgentMeta) -> None:
         try:
             import psycopg2, json
-            import os
-            db_url = os.getenv("KEIBA_DB_URL", "postgresql://postgres:trust@localhost:5433/mykeibadb")
+            from pipeline.config import DB_URL
             sql = """
                 INSERT INTO data_snapshots (snapshot_id, trace_id, run_tag, files, created_at)
                 VALUES (%(snap_id)s, %(trace_id)s, %(run_tag)s, %(files)s, now())
                 ON CONFLICT (snapshot_id) DO NOTHING
             """
-            conn = psycopg2.connect(db_url)
+            conn = psycopg2.connect(DB_URL)
             with conn, conn.cursor() as cur:
                 cur.execute(sql, {
                     "snap_id":  snap_id,

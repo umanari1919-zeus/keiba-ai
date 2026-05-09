@@ -11,24 +11,23 @@ v2: agents/ レイヤーと統合。MonitorAgent による実 auto_stop 評価�
   python 00_orchestrator.py --dry-run   # 全ステージをスキップ実行
 
 Windows タスクスケジューラ登録例:
-  毎日 04:00 に python D:/keiba_ai/pipeline_v2/00_orchestrator.py を実行
+  毎日 04:00 に python <project_root>/pipeline_v2/00_orchestrator.py を実行
 """
 
 import subprocess
 import json
 import logging
 import sys
-import hashlib
 import uuid
 import pathlib
 from datetime import datetime, timezone
 
 # agents/ レイヤーを PATH に追加
-_BASE_DIR = pathlib.Path(r"D:\keiba_ai")
-# BASE_DIR を必ず先頭に (worktree より優先)
-if str(_BASE_DIR) in sys.path:
-    sys.path.remove(str(_BASE_DIR))
-sys.path.insert(0, str(_BASE_DIR))
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+# プロジェクトルートを必ず先頭に (worktree より優先)
+if str(PROJECT_ROOT) in sys.path:
+    sys.path.remove(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 # ─── パス設定 ────────────────────────────────────────────────
 BASE        = pathlib.Path(__file__).parent
@@ -63,7 +62,7 @@ def load_dag_spec() -> dict:
         return json.load(f)
 
 
-def run_stage(script_name: str, task_id: str) -> bool:
+def run_stage(script_name: str, task_id: str, dry_run: bool = False, extra_args: list[str] | None = None) -> bool:
     """
     1ステージを subprocess で実行し、成否を返す。
     """
@@ -74,8 +73,13 @@ def run_stage(script_name: str, task_id: str) -> bool:
         log.warning(f"  スクリプトが見つかりません: {script_path}  → スキップ")
         return True  # スタブ未実装はスキップ扱い（後で False に変更可）
 
+    if dry_run:
+        log.info("  [DRY-RUN] skip: %s", script_name)
+        return True
+
     result = subprocess.run(
         [sys.executable, str(script_path),
+         *(extra_args or []),
          "--trace_id", TRACE_ID,
          "--run_tag",  RUN_TAG],
         capture_output=True,
@@ -96,12 +100,16 @@ def run_stage(script_name: str, task_id: str) -> bool:
         return False
 
 
-def check_auto_stop(conditions: dict) -> tuple[bool, str]:
+def check_auto_stop(conditions: dict, dry_run: bool = False) -> tuple[bool, str]:
     """
     auto_stop条件をチェック。
     agents.MonitorAgent を使った実メトリクス評価 → フォールバックで DB直接参照。
     戻り値: (停止すべきか, 理由)
     """
+    if dry_run:
+        log.info("  [DRY-RUN] auto_stop チェックをスキップ")
+        return False, ""
+
     # agents/ MonitorAgent による評価
     try:
         from agents.monitor_agent import MonitorAgent
@@ -159,7 +167,7 @@ def resolve_execution_order(dag: list) -> list:
     return ordered
 
 
-def main():
+def main(dry_run: bool = False, start_at: str = ""):
     log.info("=" * 60)
     log.info(f"うまなり地蔵AI パイプライン起動")
     log.info(f"  TRACE_ID : {TRACE_ID}")
@@ -174,6 +182,12 @@ def main():
 
     # 実行順序を解決
     ordered_tasks = resolve_execution_order(dag)
+    if start_at:
+        task_ids = [task["task_id"] for task in ordered_tasks]
+        if start_at not in task_ids:
+            log.error("--start-at に未知のステージが指定されました: %s", start_at)
+            sys.exit(1)
+        ordered_tasks = ordered_tasks[task_ids.index(start_at):]
     log.info(f"実行順序: {[t['task_id'] for t in ordered_tasks]}")
 
     failed_stages = []
@@ -181,16 +195,17 @@ def main():
     for task in ordered_tasks:
         task_id     = task["task_id"]
         script_name = task["script"]
+        extra_args  = task.get("args", [])
 
         # auto_stop チェック
-        should_stop, reason = check_auto_stop(auto_stop_conds)
+        should_stop, reason = check_auto_stop(auto_stop_conds, dry_run=dry_run)
         if should_stop:
             log.error(f"🛑 AUTO_STOP 発動: {reason}")
             log.error(f"  {task_id} 以降のステージをすべて停止します")
             break
 
         # ステージ実行
-        success = run_stage(script_name, task_id)
+        success = run_stage(script_name, task_id, dry_run=dry_run, extra_args=extra_args)
 
         if not success:
             failed_stages.append(task_id)
@@ -216,18 +231,15 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="全ステージをスキップ（構造確認用）")
+    parser.add_argument("--trace_id", default="")
+    parser.add_argument("--run_tag", default="")
+    parser.add_argument("--start-at", default="", help="指定ステージから途中再開する")
     args, _ = parser.parse_known_args()
 
-    if args.dry_run:
-        # dry-run: スクリプト実行をスキップしてフローのみ確認
-        _orig_run_stage = run_stage
-        def _dry_run_stage(script_name, task_id):
-            log.info("  [DRY-RUN] skip: %s", script_name)
-            return True
-        import builtins
-        # run_stage をモンキーパッチ
-        import sys as _sys
-        _mod = _sys.modules[__name__]
-        _mod.run_stage = _dry_run_stage  # type: ignore
+    if args.trace_id:
+        TRACE_ID = args.trace_id
+        RUN_TAG = args.run_tag or f"run_{today}_{TRACE_ID[:8]}"
+    elif args.run_tag:
+        RUN_TAG = args.run_tag
 
-    main()
+    sys.exit(main(dry_run=args.dry_run, start_at=args.start_at))
