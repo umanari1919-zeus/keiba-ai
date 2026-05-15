@@ -6,6 +6,8 @@ import pickle
 import pytest
 from unittest.mock import MagicMock, patch
 
+mlflow = pytest.importorskip("mlflow")
+
 
 @pytest.mark.unit
 class TestMlflowRegister:
@@ -51,7 +53,6 @@ class TestMlflowRegister:
     def test_list_runs_no_experiment(self, tmp_path, monkeypatch, capsys):
         empty_uri = f"file:///{(tmp_path / 'mlflow_isolated').as_posix()}"
 
-        import mlflow
         import mlflow_register
         monkeypatch.setattr(mlflow_register, "TRACKING_URI", empty_uri)
         monkeypatch.setattr(mlflow_register, "EXPERIMENT_NAME", "nonexistent-exp")

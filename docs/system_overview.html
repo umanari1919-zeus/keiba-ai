@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>うまなり地蔵AI システム全体図</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1f2933;
+      --muted: #64748b;
+      --line: #d6dee8;
+      --paper: #f7f8f5;
+      --panel: #ffffff;
+      --accent: #0f766e;
+      --accent-2: #b45309;
+      --accent-3: #334155;
+      --good: #15803d;
+      --warn: #b45309;
+      --bad: #b91c1c;
+      --shadow: 0 10px 26px rgba(31, 41, 51, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", Meiryo, system-ui, sans-serif;
+      line-height: 1.65;
+    }
+
+    header {
+      min-height: 52vh;
+      display: grid;
+      align-items: end;
+      background:
+        linear-gradient(180deg, rgba(8, 28, 35, 0.22), rgba(247, 248, 245, 0.95)),
+        url("https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&w=1800&q=80") center 42% / cover;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero {
+      width: min(1160px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 64px 0 34px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(34px, 6vw, 74px);
+      line-height: 1.04;
+      letter-spacing: 0;
+      color: #fff;
+      text-shadow: 0 2px 16px rgba(0, 0, 0, 0.36);
+    }
+
+    .lead {
+      max-width: 780px;
+      margin: 0;
+      color: #eef6f4;
+      font-size: clamp(16px, 2vw, 21px);
+      text-shadow: 0 1px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    main {
+      width: min(1160px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 56px;
+    }
+
+    section {
+      margin-top: 28px;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .grid.cols-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.cols-4 {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .metric {
+      min-height: 122px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .metric strong {
+      display: block;
+      color: var(--accent);
+      font-size: 30px;
+      line-height: 1.1;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .step {
+      position: relative;
+      min-height: 140px;
+      padding: 13px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .step::after {
+      content: "";
+      position: absolute;
+      right: -9px;
+      top: 50%;
+      width: 16px;
+      height: 16px;
+      border-right: 2px solid var(--accent);
+      border-top: 2px solid var(--accent);
+      transform: rotate(45deg) translateY(-50%);
+      background: var(--paper);
+      z-index: 2;
+    }
+
+    .step:nth-child(4n)::after,
+    .step:last-child::after {
+      display: none;
+    }
+
+    .step .id {
+      color: var(--accent);
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .step .meta {
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .step p {
+      margin: 8px 0 0;
+      font-size: 14px;
+    }
+
+    .pillrow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--accent-3);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    table {
+      width: 100%;
+      min-width: 780px;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    th {
+      color: var(--accent-3);
+      background: #edf3f1;
+      font-weight: 700;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    code {
+      padding: 2px 5px;
+      border-radius: 5px;
+      background: #edf2f7;
+      color: #263238;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.92em;
+    }
+
+    .callout {
+      border-left: 5px solid var(--accent-2);
+      background: #fff8eb;
+      padding: 14px 16px;
+      border-radius: 8px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 14px;
+      align-items: start;
+    }
+
+    footer {
+      margin-top: 36px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 880px) {
+      .grid.cols-2,
+      .grid.cols-4,
+      .split,
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      .step::after {
+        display: none;
+      }
+
+      header {
+        min-height: 46vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="hero">
+      <h1>うまなり地蔵AI</h1>
+      <p class="lead">JRAの当日データを取り込み、特徴量生成、穴馬予測、EV判定、Kelly資金管理、解説生成、発信準備、監視までを一気通貫で動かす競馬予想AIの全体図。</p>
+    </div>
+  </header>
+
+  <main>
+    <section class="grid cols-4" id="metrics"></section>
+
+    <section class="split">
+      <div class="card">
+        <h2>日次パイプライン</h2>
+        <p class="small">推奨入口は <code>python run_all.py --v2</code>。DAGは依存関係に沿って実行され、各ステージにtrace_idとrun_tagが渡ります。</p>
+        <div class="flow" id="daily-flow"></div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>守るべきルール</h2>
+          <div class="pillrow" id="guardrails"></div>
+        </div>
+        <div class="callout">
+          <h3>データリーク防止</h3>
+          <p>オッズ・人気は学習特徴量に入れず、予測後のEV判定、資金管理、レポートだけで使います。ここが収益評価の生命線です。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>週次学習・知識更新</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ステップ</th>
+              <th>スクリプト</th>
+              <th>役割</th>
+              <th>依存</th>
+            </tr>
+          </thead>
+          <tbody id="weekly-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="grid cols-2">
+      <div class="card">
+        <h2>モデルと判定</h2>
+        <div id="modeling"></div>
+      </div>
+      <div class="card">
+        <h2>DB・成果物</h2>
+        <div id="stores"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>エージェント構成</h2>
+      <p class="small">全エージェントは <code>agents/base_agent.py</code> を基底に、監査ログ、ハッシュ、dry_run、quarantineを共通化しています。</p>
+      <div class="grid cols-2" id="agent-groups"></div>
+    </section>
+
+    <section class="card">
+      <h2>旧pipelineの機能群</h2>
+      <div class="grid cols-2" id="legacy-phases"></div>
+    </section>
+
+    <section class="grid cols-2">
+      <div class="card">
+        <h2>API</h2>
+        <div id="api"></div>
+      </div>
+      <div class="card">
+        <h2>運用コマンド</h2>
+        <div id="commands"></div>
+      </div>
+    </section>
+
+    <footer>
+      <p>JSON: <code>docs/system_overview.json</code>。このHTMLはJSONと同じ内容を内蔵しているため、ファイル単体でも表示できます。</p>
+    </footer>
+  </main>
+
+  <script type="application/json" id="system-data">
+  {
+    "system": {
+      "name": "うまなり地蔵AI",
+      "purpose": "高オッズ穴馬をアンサンブル機械学習で予測し、期待値・資金管理・解説生成・発信までを自動化するJRA予想システム",
+      "recommended_pipeline": "pipeline_v2",
+      "primary_commands": [
+        {"name": "日次DAG", "command": "python run_all.py --v2", "description": "毎朝の推奨実行"},
+        {"name": "週次学習DAG", "command": "python run_all.py --v2-weekly", "description": "再学習・バックテスト・知識更新"},
+        {"name": "買い目シート", "command": "python pipeline/morning_report.py", "description": "今日の買い目を表示・保存"},
+        {"name": "検証", "command": "python canary_run.py", "description": "ドライラン検証"}
+      ]
+    },
+    "rules": {
+      "thresholds": {
+        "EV_THRESHOLD": {"value": 0.15, "meaning": "期待値15%以上"},
+        "KELLY_FRACTION": {"value": 0.10, "meaning": "1/10 Kelly"},
+        "MIN_ODDS": {"value": 10.0, "meaning": "10倍未満は対象外"},
+        "ANABA_ODDS": {"value": 30.0, "meaning": "30倍以上が穴馬"}
+      },
+      "leakage_guardrails": [
+        "オッズ・人気は学習特徴量に使わない",
+        "オッズは予測後のEV計算・資金管理・レポートにだけ使う",
+        "新しい定数はpipeline/config.pyに集約する",
+        "CSV_READ_OPTSまたはon_bad_lines='skip'を使う",
+        "CatBoost SHAP TreeExplainerを避ける"
+      ]
+    },
+    "data_stores": {
+      "database": {"url": "postgresql://postgres:trust@localhost:5433/mykeibadb", "main_tables": ["race_results", "horse_info", "jockey_stats"], "jra_calendar_check": "kaisaibi"},
+      "files": [
+        {"path": "data/today_entries_YYYYMMDD.csv", "role": "当日出馬表"},
+        {"path": "data/predictions_YYYYMMDD.csv", "role": "予測結果"},
+        {"path": "data/ev_analysis_YYYY.csv", "role": "期待値分析"},
+        {"path": "data/ticket_recommendations_YYYY.json", "role": "推奨馬券"},
+        {"path": "data/bankroll.json", "role": "資金状態"},
+        {"path": "data/knowledge_base/", "role": "知識ベース"},
+        {"path": "reports/morning_YYYYMMDD.txt", "role": "朝の買い目レポート"}
+      ]
+    },
+    "modeling": {
+      "primary_model": "model_v8.pkl",
+      "ensemble": [{"model": "LightGBM", "weight": 0.5}, {"model": "XGBoost", "weight": 0.3}, {"model": "CatBoost", "weight": 0.2}],
+      "feature_policy": "オッズ・人気を除外した特徴量で確率を予測し、予測後にEVを評価する",
+      "supporting_models": ["odds_model.pkl", "model_nn.pth", "rl_model.zip"]
+    },
+    "daily_dag": [
+      {"id": "ingest", "script": "pipeline_v2/01_ingest.py", "agent": "IngestAgent", "depends_on": [], "role": "DB・外部データを取り込む"},
+      {"id": "normalize", "script": "pipeline_v2/02_normalize.py", "agent": "NormalizerAgent", "depends_on": ["ingest"], "role": "入力データを標準形式へ整える"},
+      {"id": "feature_gen", "script": "pipeline_v2/03_feature_gen.py", "agent": "FeatureAgent", "depends_on": ["normalize"], "role": "特徴量を作る"},
+      {"id": "rag_index", "script": "pipeline_v2/10_rag_index.py", "agent": "RAGStore", "depends_on": ["feature_gen"], "role": "検索用知識を更新"},
+      {"id": "race_select", "script": "pipeline_v2/17_race_select.py", "agent": "RaceSelectorAgent", "depends_on": ["feature_gen"], "role": "狙うレースを選ぶ"},
+      {"id": "enrich_today", "script": "pipeline_v2/24_enrich_today.py", "agent": "pipeline/enrich_today.py", "depends_on": ["feature_gen"], "role": "当日特徴量を補完"},
+      {"id": "batch_inference", "script": "pipeline_v2/04_batch_inference.py", "agent": "BatchInferenceAgent", "depends_on": ["feature_gen", "race_select", "enrich_today"], "role": "各馬の確率を推論"},
+      {"id": "anomaly", "script": "pipeline_v2/14_anomaly.py", "agent": "AnomalyAgent", "depends_on": ["batch_inference"], "role": "異常を検知"},
+      {"id": "explain", "script": "pipeline_v2/05_explain.py", "agent": "LLMExplainAgent", "depends_on": ["batch_inference", "anomaly"], "role": "根拠説明を生成"},
+      {"id": "upsetscore", "script": "pipeline_v2/08_upsetscore.py", "agent": "direct", "depends_on": ["batch_inference"], "role": "穴馬スコア"},
+      {"id": "publish", "script": "pipeline_v2/06_publish.py", "agent": "PublishAgent", "depends_on": ["explain"], "role": "公開草稿を準備"},
+      {"id": "trade", "script": "pipeline_v2/07_trade.py", "agent": "TradingAgent + MarketAgent", "depends_on": ["explain"], "role": "候補買い目を作る"},
+      {"id": "portfolio", "script": "pipeline_v2/16_portfolio.py", "agent": "PortfolioAgent", "depends_on": ["trade"], "role": "買い目配分を最適化"},
+      {"id": "condition_adjust", "script": "pipeline_v2/18_condition_adjust.py", "agent": "ConditionAdjusterAgent", "depends_on": ["portfolio"], "role": "条件別補正"},
+      {"id": "bankroll", "script": "pipeline_v2/20_bankroll.py", "agent": "BankrollAgent", "depends_on": ["condition_adjust"], "role": "資金配分を制御"},
+      {"id": "roi_track", "script": "pipeline_v2/15_roi_track.py", "agent": "RoiTrackerAgent", "depends_on": ["bankroll"], "role": "回収率を追跡"},
+      {"id": "monitor", "script": "pipeline_v2/09_monitor.py", "agent": "MonitorAgent + OpsAgent", "depends_on": ["publish", "roi_track"], "role": "監視とauto_stop"}
+    ],
+    "weekly_dag": [
+      {"id": "weekly_train", "script": "pipeline_v2/11_weekly_train.py", "role": "モデル再学習", "depends_on": []},
+      {"id": "rag_rebuild", "script": "pipeline_v2/10_rag_index.py", "role": "RAG再構築", "depends_on": ["weekly_train"]},
+      {"id": "upsetscore", "script": "pipeline_v2/08_upsetscore.py", "role": "UpsetScore再算出", "depends_on": ["weekly_train"]},
+      {"id": "odds_model_train", "script": "pipeline_v2/23_odds_model_train.py", "role": "市場オッズモデル再学習", "depends_on": ["weekly_train"]},
+      {"id": "backtest_engine", "script": "pipeline_v2/21_backtest_engine.py", "role": "EV×Kelly点検", "depends_on": ["weekly_train"]},
+      {"id": "statistics", "script": "pipeline_v2/22_statistics.py", "role": "統計・リスク解析", "depends_on": ["weekly_train"]},
+      {"id": "knowledge_update", "script": "pipeline_v2/12_knowledge_update.py", "role": "知識更新", "depends_on": ["rag_rebuild", "upsetscore", "backtest_engine", "statistics"]},
+      {"id": "weekly_monitor", "script": "pipeline_v2/09_monitor.py", "role": "週次監視", "depends_on": ["knowledge_update"]}
+    ],
+    "agents": {
+      "groups": [
+        {"name": "インフラ", "agents": ["BaseAgent", "SchemaRegistry", "AuditLogger", "RAGStore"]},
+        {"name": "データ", "agents": ["IngestAgent", "NormalizerAgent", "FeatureAgent"]},
+        {"name": "推論・説明", "agents": ["BatchInferenceAgent", "LLMExplainAgent", "MultiAgentV2Agent"]},
+        {"name": "売買・資金", "agents": ["TradingAgent", "MarketAgent", "PortfolioAgent", "BankrollAgent"]},
+        {"name": "分析・戦略", "agents": ["AnomalyAgent", "StatisticsAgent", "RaceSelectorAgent", "ConditionAdjusterAgent", "BacktestAgent", "BacktestEngineAgent", "OddsMonitorAgent", "OddsScraperAgent"]},
+        {"name": "学習・知識", "agents": ["TrainAgent", "AutoLearnAgent", "KnowledgeAgent"]},
+        {"name": "監視・配信", "agents": ["MonitorAgent", "OpsAgent", "RoiTrackerAgent", "PublishAgent", "SocialBotAgent"]}
+      ]
+    },
+    "legacy_pipeline_phases": [
+      {"phase": "データ・特徴量", "files": ["pipeline/data_fetch_01.py", "pipeline/feature_eng_02.py", "pipeline/feature_advanced_19.py", "pipeline/training_analysis_37.py", "pipeline/trainer_analysis_38.py", "pipeline/debut_analysis_39.py", "pipeline/shogai_analysis_40.py"]},
+      {"phase": "学習・評価", "files": ["pipeline/model_train_03.py", "pipeline/odds_model.py", "pipeline/optuna_advanced_25.py", "pipeline/nn_stacking_22.py", "pipeline/rl_strategy_26.py", "pipeline/shap_analysis.py"]},
+      {"phase": "予想・馬券", "files": ["pipeline/predict_04.py", "pipeline/ev_engine_10.py", "pipeline/portfolio_opt_11.py", "pipeline/kelly_bankroll_09.py", "pipeline/race_selector_31.py", "pipeline/ticket_optimizer_30.py", "pipeline/bet_portfolio_29.py"]},
+      {"phase": "バックテスト・監視", "files": ["pipeline/backtest_engine_32.py", "pipeline/backtest_walkforward_35.py", "pipeline/condition_adjuster_34.py", "pipeline/odds_monitor_33.py", "pipeline/roi_tracker_12.py", "pipeline/knowledge_curator_41.py"]},
+      {"phase": "発信", "files": ["pipeline/claude_comment_06.py", "pipeline/note_07.py", "pipeline/notify_08.py", "pipeline/social_bot_27.py", "pipeline/dashboard_15.py"]}
+    ],
+    "api": {"routers": [
+      {"prefix": "/api/pipeline", "role": "実行・状態・ログ・履歴・キャンセル"},
+      {"prefix": "/api/data", "role": "予想、ROI、資金、ランキング、モデル性能"},
+      {"prefix": "/api/settings", "role": "閾値設定"},
+      {"prefix": "/api/admin", "role": "ジョブ、ログ、統計"},
+      {"prefix": "/ws", "role": "リアルタイム更新"}
+    ]}
+  }
+  </script>
+
+  <script>
+    const data = JSON.parse(document.getElementById("system-data").textContent);
+    const el = (tag, className, html) => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (html !== undefined) node.innerHTML = html;
+      return node;
+    };
+    const code = (text) => `<code>${String(text).replace(/[&<>]/g, s => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[s]))}</code>`;
+
+    function renderMetrics() {
+      const metrics = document.getElementById("metrics");
+      const thresholds = data.rules.thresholds;
+      Object.entries(thresholds).forEach(([name, item]) => {
+        metrics.appendChild(el("div", "card metric", `<span>${name}</span><strong>${item.value}</strong><span>${item.meaning}</span>`));
+      });
+    }
+
+    function renderDailyFlow() {
+      const flow = document.getElementById("daily-flow");
+      data.daily_dag.forEach((step, index) => {
+        flow.appendChild(el("div", "step", `
+          <div class="id">${index + 1}. ${step.id}</div>
+          <div class="meta">${step.agent}</div>
+          <p>${step.role}</p>
+          <div class="meta">${code(step.script)}</div>
+        `));
+      });
+    }
+
+    function renderGuardrails() {
+      const wrap = document.getElementById("guardrails");
+      data.rules.leakage_guardrails.forEach(item => wrap.appendChild(el("span", "pill", item)));
+    }
+
+    function renderWeekly() {
+      const body = document.getElementById("weekly-rows");
+      data.weekly_dag.forEach(step => {
+        body.appendChild(el("tr", "", `
+          <td><strong>${step.id}</strong></td>
+          <td>${code(step.script)}</td>
+          <td>${step.role}</td>
+          <td>${step.depends_on.length ? step.depends_on.join(", ") : "なし"}</td>
+        `));
+      });
+    }
+
+    function renderModeling() {
+      const m = data.modeling;
+      document.getElementById("modeling").innerHTML = `
+        <p>主モデル: ${code(m.primary_model)}</p>
+        <div class="pillrow">${m.ensemble.map(x => `<span class="pill">${x.model} ${Math.round(x.weight * 100)}%</span>`).join("")}</div>
+        <p>${m.feature_policy}</p>
+        <p class="small">補助モデル: ${m.supporting_models.map(code).join(" ")}</p>
+      `;
+    }
+
+    function renderStores() {
+      const d = data.data_stores;
+      document.getElementById("stores").innerHTML = `
+        <p>DB: ${code(d.database.url)}</p>
+        <p class="small">主テーブル: ${d.database.main_tables.map(code).join(" ")}</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>パス</th><th>役割</th></tr></thead>
+            <tbody>${d.files.map(f => `<tr><td>${code(f.path)}</td><td>${f.role}</td></tr>`).join("")}</tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function renderAgents() {
+      const wrap = document.getElementById("agent-groups");
+      data.agents.groups.forEach(group => {
+        wrap.appendChild(el("div", "card", `<h3>${group.name}</h3><div class="pillrow">${group.agents.map(a => `<span class="pill">${a}</span>`).join("")}</div>`));
+      });
+    }
+
+    function renderLegacy() {
+      const wrap = document.getElementById("legacy-phases");
+      data.legacy_pipeline_phases.forEach(phase => {
+        wrap.appendChild(el("div", "card", `<h3>${phase.phase}</h3><div class="pillrow">${phase.files.map(f => `<span class="pill">${f}</span>`).join("")}</div>`));
+      });
+    }
+
+    function renderApiAndCommands() {
+      document.getElementById("api").innerHTML = `<div class="pillrow">${data.api.routers.map(r => `<span class="pill">${r.prefix}: ${r.role}</span>`).join("")}</div>`;
+      document.getElementById("commands").innerHTML = `<div class="table-wrap"><table><thead><tr><th>用途</th><th>コマンド</th><th>説明</th></tr></thead><tbody>${data.system.primary_commands.map(c => `<tr><td>${c.name}</td><td>${code(c.command)}</td><td>${c.description}</td></tr>`).join("")}</tbody></table></div>`;
+    }
+
+    renderMetrics();
+    renderDailyFlow();
+    renderGuardrails();
+    renderWeekly();
+    renderModeling();
+    renderStores();
+    renderAgents();
+    renderLegacy();
+    renderApiAndCommands();
+  </script>
+</body>
+</html>

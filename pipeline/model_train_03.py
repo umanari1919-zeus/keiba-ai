@@ -1,7 +1,7 @@
 import pickle
 from datetime import datetime
 
-from pipeline.config import BASE_DIR, CSV_FEATURES
+from pipeline.config import BASE_DIR, CSV_FEATURES, MODEL_PATH
 from pipeline.native_runtime import ensure_native_runtime
 
 ensure_native_runtime()
@@ -92,6 +92,29 @@ LEAKY_OR_RAW_COLUMNS = {
     "ev",
     "pred_rank",
     "bankroll_after",
+    # kyosoba_master2 の現在時点通算成績は、対象レース以後の結果を含む可能性がある。
+    "sogo_1chaku",
+    "sogo_2chaku",
+    "sogo_3chaku",
+    "sogo_total",
+    "sogo_win_rate",
+    "shiba_ryo_1chaku",
+    "shiba_ryo_2chaku",
+    "shiba_ryo_3chaku",
+    "dirt_ryo_1chaku",
+    "dirt_ryo_2chaku",
+    "dirt_ryo_3chaku",
+    "shiba_short_1chaku",
+    "shiba_middle_1chaku",
+    "shiba_long_1chaku",
+    "dirt_short_1chaku",
+    "dirt_middle_1chaku",
+    "dirt_long_1chaku",
+    "shiba_win_rate",
+    "dirt_win_rate",
+    "short_win_rate",
+    "middle_win_rate",
+    "long_win_rate",
 }
 
 
@@ -108,7 +131,7 @@ def _to_numeric_frame(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
 
 
 def _detect_features(df: pd.DataFrame) -> list[str]:
-    base = [f for f in FEATURES if f in df.columns]
+    base = [f for f in FEATURES if f in df.columns and f not in LEAKY_OR_RAW_COLUMNS]
     extra = []
     for c in df.columns:
         normalized = c.lower()
@@ -514,13 +537,13 @@ def train_model():
             }
         }, f)
 
-    print(f"\n💾 {model_path} に保存しました（最適重み込み）")
+    print(f"\n💾 {MODEL_PATH} に保存しました（最適重み込み）")
 
     try:
         import sys as _sys
         _sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent.parent))
         from mlflow_register import register_model
-        meta = register_model(str(model_path))
+        meta = register_model(str(MODEL_PATH))
         print(f"📊 MLflow 登録完了: run_id={meta['run_id']}")
     except Exception as e:
         print(f"⚠️ MLflow 登録スキップ: {e}")

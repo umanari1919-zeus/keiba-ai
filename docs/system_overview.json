@@ -1,0 +1,549 @@
+{
+  "system": {
+    "name": "うまなり地蔵AI",
+    "purpose": "高オッズ穴馬をアンサンブル機械学習で予測し、期待値・資金管理・解説生成・発信までを自動化するJRA予想システム",
+    "scope": "JRA daily prediction, weekly retraining, bankroll control, backtesting, knowledge updates, publishing preparation",
+    "root": ".",
+    "recommended_pipeline": "pipeline_v2",
+    "primary_commands": [
+      {
+        "name": "日次DAG",
+        "command": "python run_all.py --v2",
+        "description": "毎朝の推奨実行。ingestからmonitorまでのv2 DAGを実行する"
+      },
+      {
+        "name": "週次学習DAG",
+        "command": "python run_all.py --v2-weekly",
+        "description": "毎週日曜向け。再学習、RAG再構築、バックテスト、知識更新を実行する"
+      },
+      {
+        "name": "買い目シート",
+        "command": "python pipeline/morning_report.py",
+        "description": "今日の推奨買い目を表示・保存する"
+      },
+      {
+        "name": "検証",
+        "command": "python canary_run.py",
+        "description": "エンドツーエンドのドライラン検証"
+      },
+      {
+        "name": "スケジューラー",
+        "command": "python scheduler.py",
+        "description": "JRA開催日判定つきの定時実行とペーパートレード"
+      }
+    ]
+  },
+  "rules": {
+    "thresholds": {
+      "EV_THRESHOLD": {
+        "value": 0.15,
+        "meaning": "期待値15%以上を推奨買い目候補にする"
+      },
+      "KELLY_FRACTION": {
+        "value": 0.1,
+        "meaning": "Kelly基準の10分の1を上限に資金配分する"
+      },
+      "MIN_ODDS": {
+        "value": 10.0,
+        "meaning": "10倍未満は買い目候補から除外する"
+      },
+      "ANABA_ODDS": {
+        "value": 30.0,
+        "meaning": "30倍以上を穴馬の中心定義にする"
+      }
+    },
+    "leakage_guardrails": [
+      "オッズ・人気は学習特徴量に使わない",
+      "オッズは予測後のEV計算・資金管理・レポートにだけ使う",
+      "新しい定数はpipeline/config.pyに集約する",
+      "CSV読み込みはon_bad_lines='skip'またはCSV_READ_OPTSを使う",
+      "CatBoostのSHAP TreeExplainerは避け、get_feature_importance()を使う"
+    ]
+  },
+  "data_stores": {
+    "database": {
+      "url": "postgresql://postgres:trust@localhost:5433/mykeibadb",
+      "main_tables": [
+        "race_results",
+        "horse_info",
+        "jockey_stats"
+      ],
+      "jra_calendar_check": "kaisaibi"
+    },
+    "files": [
+      {
+        "path": "data/today_entries_YYYYMMDD.csv",
+        "role": "当日出馬表"
+      },
+      {
+        "path": "data/predictions_YYYYMMDD.csv",
+        "role": "予測結果"
+      },
+      {
+        "path": "data/ev_analysis_YYYY.csv",
+        "role": "期待値分析"
+      },
+      {
+        "path": "data/ticket_recommendations_YYYY.json",
+        "role": "推奨馬券"
+      },
+      {
+        "path": "data/bankroll.json",
+        "role": "資金状態"
+      },
+      {
+        "path": "data/knowledge_base/",
+        "role": "EV boostと知識ベース"
+      },
+      {
+        "path": "reports/morning_YYYYMMDD.txt",
+        "role": "朝の買い目レポート"
+      }
+    ]
+  },
+  "modeling": {
+    "primary_model": "model_v8.pkl",
+    "ensemble": [
+      {
+        "model": "LightGBM",
+        "weight": 0.5
+      },
+      {
+        "model": "XGBoost",
+        "weight": 0.3
+      },
+      {
+        "model": "CatBoost",
+        "weight": 0.2
+      }
+    ],
+    "feature_policy": "オッズ・人気を除外した特徴量で勝率・複勝率などを予測し、予測後に実オッズまたは推定オッズでEVを評価する",
+    "supporting_models": [
+      "odds_model.pkl",
+      "model_nn.pth",
+      "rl_model.zip"
+    ]
+  },
+  "daily_dag": [
+    {
+      "id": "ingest",
+      "script": "pipeline_v2/01_ingest.py",
+      "agent": "IngestAgent",
+      "depends_on": [],
+      "role": "DB・外部データを取り込む"
+    },
+    {
+      "id": "normalize",
+      "script": "pipeline_v2/02_normalize.py",
+      "agent": "NormalizerAgent",
+      "depends_on": [
+        "ingest"
+      ],
+      "role": "入力データを標準形式へ整える"
+    },
+    {
+      "id": "feature_gen",
+      "script": "pipeline_v2/03_feature_gen.py",
+      "agent": "FeatureAgent",
+      "depends_on": [
+        "normalize"
+      ],
+      "role": "血統・調教・騎手・厩舎・展開などの特徴量を作る"
+    },
+    {
+      "id": "rag_index",
+      "script": "pipeline_v2/10_rag_index.py",
+      "agent": "RAGStore",
+      "depends_on": [
+        "feature_gen"
+      ],
+      "role": "検索用知識インデックスを更新する"
+    },
+    {
+      "id": "race_select",
+      "script": "pipeline_v2/17_race_select.py",
+      "agent": "RaceSelectorAgent",
+      "depends_on": [
+        "feature_gen"
+      ],
+      "role": "狙う価値が高いレースを選別する"
+    },
+    {
+      "id": "enrich_today",
+      "script": "pipeline_v2/24_enrich_today.py",
+      "agent": "pipeline/enrich_today.py",
+      "depends_on": [
+        "feature_gen"
+      ],
+      "role": "当日出馬表に過去データ由来の特徴量を補完する"
+    },
+    {
+      "id": "batch_inference",
+      "script": "pipeline_v2/04_batch_inference.py",
+      "agent": "BatchInferenceAgent",
+      "depends_on": [
+        "feature_gen",
+        "race_select",
+        "enrich_today"
+      ],
+      "role": "モデルで各馬の確率を推論する"
+    },
+    {
+      "id": "anomaly",
+      "script": "pipeline_v2/14_anomaly.py",
+      "agent": "AnomalyAgent",
+      "depends_on": [
+        "batch_inference"
+      ],
+      "role": "異常・精度劣化・危険シグナルを検知する"
+    },
+    {
+      "id": "explain",
+      "script": "pipeline_v2/05_explain.py",
+      "agent": "LLMExplainAgent",
+      "depends_on": [
+        "batch_inference",
+        "anomaly"
+      ],
+      "role": "予想の根拠を日本語で説明する"
+    },
+    {
+      "id": "upsetscore",
+      "script": "pipeline_v2/08_upsetscore.py",
+      "agent": "direct",
+      "depends_on": [
+        "batch_inference"
+      ],
+      "role": "穴馬らしさをスコア化する"
+    },
+    {
+      "id": "publish",
+      "script": "pipeline_v2/06_publish.py",
+      "agent": "PublishAgent",
+      "depends_on": [
+        "explain"
+      ],
+      "role": "X・noteなどの公開草稿を準備する"
+    },
+    {
+      "id": "trade",
+      "script": "pipeline_v2/07_trade.py",
+      "agent": "TradingAgent + MarketAgent",
+      "depends_on": [
+        "explain"
+      ],
+      "role": "EV・市場情報から候補買い目を作る"
+    },
+    {
+      "id": "portfolio",
+      "script": "pipeline_v2/16_portfolio.py",
+      "agent": "PortfolioAgent",
+      "depends_on": [
+        "trade"
+      ],
+      "role": "買い目全体の配分を最適化する"
+    },
+    {
+      "id": "condition_adjust",
+      "script": "pipeline_v2/18_condition_adjust.py",
+      "agent": "ConditionAdjusterAgent",
+      "depends_on": [
+        "portfolio"
+      ],
+      "role": "競馬場・距離・季節などの条件で補正する"
+    },
+    {
+      "id": "bankroll",
+      "script": "pipeline_v2/20_bankroll.py",
+      "agent": "BankrollAgent",
+      "depends_on": [
+        "condition_adjust"
+      ],
+      "role": "Kellyとドローダウンで資金配分を制御する"
+    },
+    {
+      "id": "roi_track",
+      "script": "pipeline_v2/15_roi_track.py",
+      "agent": "RoiTrackerAgent",
+      "depends_on": [
+        "bankroll"
+      ],
+      "role": "回収率を日次・週次・月次で追跡する"
+    },
+    {
+      "id": "monitor",
+      "script": "pipeline_v2/09_monitor.py",
+      "agent": "MonitorAgent + OpsAgent",
+      "depends_on": [
+        "publish",
+        "roi_track"
+      ],
+      "role": "ヘルスチェックとauto_stop判定を行う"
+    }
+  ],
+  "weekly_dag": [
+    {
+      "id": "weekly_train",
+      "script": "pipeline_v2/11_weekly_train.py",
+      "role": "モデルを再学習して登録する",
+      "depends_on": []
+    },
+    {
+      "id": "rag_rebuild",
+      "script": "pipeline_v2/10_rag_index.py",
+      "role": "RAGインデックスを大きめに再構築する",
+      "depends_on": [
+        "weekly_train"
+      ]
+    },
+    {
+      "id": "upsetscore",
+      "script": "pipeline_v2/08_upsetscore.py",
+      "role": "UpsetScoreを再算出する",
+      "depends_on": [
+        "weekly_train"
+      ]
+    },
+    {
+      "id": "odds_model_train",
+      "script": "pipeline_v2/23_odds_model_train.py",
+      "role": "市場オッズ予測モデルを再学習する",
+      "depends_on": [
+        "weekly_train"
+      ]
+    },
+    {
+      "id": "backtest_engine",
+      "script": "pipeline_v2/21_backtest_engine.py",
+      "role": "EVとKellyの運用閾値をバックテストで点検する",
+      "depends_on": [
+        "weekly_train"
+      ]
+    },
+    {
+      "id": "statistics",
+      "script": "pipeline_v2/22_statistics.py",
+      "role": "統計分析・PCA・クラスタリング・リスク解析",
+      "depends_on": [
+        "weekly_train"
+      ]
+    },
+    {
+      "id": "knowledge_update",
+      "script": "pipeline_v2/12_knowledge_update.py",
+      "role": "直近7日分の知識ベースを更新する",
+      "depends_on": [
+        "rag_rebuild",
+        "upsetscore",
+        "backtest_engine",
+        "statistics"
+      ]
+    },
+    {
+      "id": "weekly_monitor",
+      "script": "pipeline_v2/09_monitor.py",
+      "role": "週次監視とauto_stop判定",
+      "depends_on": [
+        "knowledge_update"
+      ]
+    }
+  ],
+  "agents": {
+    "common_base": {
+      "file": "agents/base_agent.py",
+      "features": [
+        "trace_id",
+        "run_tag",
+        "input_hash",
+        "output_hash",
+        "schema validation",
+        "audit logging",
+        "dry_run",
+        "quarantine"
+      ]
+    },
+    "groups": [
+      {
+        "name": "インフラ",
+        "agents": [
+          "BaseAgent",
+          "SchemaRegistry",
+          "AuditLogger",
+          "RAGStore"
+        ]
+      },
+      {
+        "name": "データ",
+        "agents": [
+          "IngestAgent",
+          "NormalizerAgent",
+          "FeatureAgent"
+        ]
+      },
+      {
+        "name": "推論・説明",
+        "agents": [
+          "BatchInferenceAgent",
+          "LLMExplainAgent",
+          "MultiAgentV2Agent"
+        ]
+      },
+      {
+        "name": "売買・資金",
+        "agents": [
+          "TradingAgent",
+          "MarketAgent",
+          "PortfolioAgent",
+          "BankrollAgent"
+        ]
+      },
+      {
+        "name": "分析・戦略",
+        "agents": [
+          "AnomalyAgent",
+          "StatisticsAgent",
+          "RaceSelectorAgent",
+          "ConditionAdjusterAgent",
+          "BacktestAgent",
+          "BacktestEngineAgent",
+          "OddsMonitorAgent",
+          "OddsScraperAgent"
+        ]
+      },
+      {
+        "name": "学習・知識",
+        "agents": [
+          "TrainAgent",
+          "AutoLearnAgent",
+          "KnowledgeAgent"
+        ]
+      },
+      {
+        "name": "監視・配信",
+        "agents": [
+          "MonitorAgent",
+          "OpsAgent",
+          "RoiTrackerAgent",
+          "PublishAgent",
+          "SocialBotAgent"
+        ]
+      }
+    ]
+  },
+  "legacy_pipeline_phases": [
+    {
+      "phase": "データ・特徴量",
+      "files": [
+        "pipeline/data_fetch_01.py",
+        "pipeline/feature_eng_02.py",
+        "pipeline/feature_advanced_19.py",
+        "pipeline/training_analysis_37.py",
+        "pipeline/trainer_analysis_38.py",
+        "pipeline/debut_analysis_39.py",
+        "pipeline/shogai_analysis_40.py"
+      ]
+    },
+    {
+      "phase": "学習・評価",
+      "files": [
+        "pipeline/model_train_03.py",
+        "pipeline/odds_model.py",
+        "pipeline/optuna_advanced_25.py",
+        "pipeline/nn_stacking_22.py",
+        "pipeline/rl_strategy_26.py",
+        "pipeline/shap_analysis.py"
+      ]
+    },
+    {
+      "phase": "予想・馬券",
+      "files": [
+        "pipeline/predict_04.py",
+        "pipeline/ev_engine_10.py",
+        "pipeline/portfolio_opt_11.py",
+        "pipeline/kelly_bankroll_09.py",
+        "pipeline/race_selector_31.py",
+        "pipeline/ticket_optimizer_30.py",
+        "pipeline/bet_portfolio_29.py"
+      ]
+    },
+    {
+      "phase": "バックテスト・監視",
+      "files": [
+        "pipeline/backtest_engine_32.py",
+        "pipeline/backtest_walkforward_35.py",
+        "pipeline/condition_adjuster_34.py",
+        "pipeline/odds_monitor_33.py",
+        "pipeline/roi_tracker_12.py",
+        "pipeline/knowledge_curator_41.py"
+      ]
+    },
+    {
+      "phase": "発信",
+      "files": [
+        "pipeline/claude_comment_06.py",
+        "pipeline/note_07.py",
+        "pipeline/notify_08.py",
+        "pipeline/social_bot_27.py",
+        "pipeline/dashboard_15.py"
+      ]
+    }
+  ],
+  "llm_policy": {
+    "priority": [
+      "Ollama",
+      "NVIDIA API",
+      "Claude Haiku",
+      "template"
+    ],
+    "uses": [
+      "X投稿コメント",
+      "note.com草稿",
+      "予想根拠説明",
+      "知識ベース抽出",
+      "Supervisor判断"
+    ]
+  },
+  "api": {
+    "framework": "FastAPI",
+    "entrypoint": "api/main.py",
+    "routers": [
+      {
+        "prefix": "/api/pipeline",
+        "role": "パイプライン実行・状態・ログ・履歴・キャンセル"
+      },
+      {
+        "prefix": "/api/data",
+        "role": "予想、ROI、資金、レースランキング、モデル性能"
+      },
+      {
+        "prefix": "/api/settings",
+        "role": "EV・Kelly・オッズ閾値などの設定取得・更新・リセット"
+      },
+      {
+        "prefix": "/api/admin",
+        "role": "ジョブ、ログ、エージェント統計"
+      },
+      {
+        "prefix": "/ws",
+        "role": "リアルタイム更新"
+      }
+    ]
+  },
+  "operations": {
+    "scheduler": {
+      "file": "scheduler.py",
+      "features": [
+        "JRA開催日判定",
+        "mykeibadb同期",
+        "v2パイプライン実行",
+        "30日ペーパートレード",
+        "失敗時通知"
+      ]
+    },
+    "auto_stop_conditions": {
+      "mismatch_rate_gt": 0.02,
+      "quarantine_24h_increase_gt": 50,
+      "spearman_drop_pct": 0.2
+    }
+  }
+}

@@ -12,7 +12,14 @@ PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from pipeline.config import BASE_DIR, DATA_DIR, CSV_FEATURES
+from pipeline.config import (
+    BASE_DIR,
+    DATA_DIR,
+    CSV_FEATURES,
+    EV_THRESHOLD,
+    EV_THRESHOLDS_BY_TYPE,
+    MIN_ODDS,
+)
 from pipeline.native_runtime import ensure_native_runtime
 
 ensure_native_runtime()
@@ -26,17 +33,6 @@ try:
     import pandas as pd
 except ImportError:
     pd = None
-
-EV_THRESHOLD = 0.15
-MIN_ODDS     = 10.0
-
-# レース種別ごとのEV閾値（新馬・障害は低め、ハンデ戦は高め）
-EV_THRESHOLDS_BY_TYPE = {
-    "debut":   0.10,   # 新馬戦: 実績なし → 低い閾値で広く拾う
-    "shogai":  0.10,   # 障害戦: 専門性 → 低め
-    "handicap": 0.20,  # ハンデ戦: 混戦 → 高め
-    "default": EV_THRESHOLD,
-}
 
 MODEL_PATH = os.path.join(BASE_DIR, "model_v8.pkl")
 FEAT_FILE  = CSV_FEATURES
@@ -269,6 +265,8 @@ def run_ev_analysis(year=2025, threshold=EV_THRESHOLD):
 
     ev_df = build_ev_dataframe(test_df, ensemble_proba, le)
     positive_ev = filter_positive_ev(ev_df, threshold)
+    positive_ev["analysis_mode"] = "BACKTEST_ONLY"
+    positive_ev["prediction_scope"] = f"historical_year_{year}"
 
     sep = "=" * 55
     print(f"\n{sep}")

@@ -48,11 +48,14 @@ run_all.py --v2
        ├─ 16_portfolio.py   → agents/portfolio_agent.py
        ├─ 17_race_select.py → agents/race_selector_agent.py
        ├─ 18_condition_adjust.py → agents/condition_adjuster_agent.py
-       └─ 20_bankroll.py    → agents/bankroll_agent.py（DD超過→終了コード2）
+       ├─ 20_bankroll.py    → agents/bankroll_agent.py（DD超過→終了コード2）
+       ├─ 24_enrich_today.py  → pipeline/enrich_today.py（特徴量補完+オッズ推定）
+       └─ (24は feature_gen → batch_inference の間に挿入)
 
 run_all.py --v2-weekly
   └─ pipeline_v2/00_orchestrator_weekly.py ← dag_spec_weekly.json
        ├─ 11_weekly_train.py  → agents/train_agent.py
+       ├─ 23_odds_model_train.py → pipeline/odds_model.py（市場オッズモデル再学習）
        ├─ 13_backtest.py      → agents/backtest_agent.py
        ├─ 21_backtest_engine.py → agents/backtest_engine_agent.py
        ├─ 10_rag_index.py     → agents/rag_store.py
@@ -107,15 +110,21 @@ run_all.py --v2-weekly
 | ファイル | 役割 | 出力 |
 |----------|------|------|
 | model_train_03.py | LGB+XGB+CB アンサンブル | model_v8.pkl |
+| odds_model.py | **市場オッズ予測** LightGBM回帰（R²=0.75） | odds_model.pkl |
 | optuna_advanced_25.py | Optunaハイパーパラメータ最適化 | — |
 | nn_stacking_22.py | Neural Network + Stacking | — |
 | rl_strategy_26.py | 強化学習ベットサイジング | rl_model.zip |
 | shap_analysis.py | SHAP可視化 11種（LGB/XGB） | shap_output/*.png |
 
+### PHASE 3.5 — 当日データ準備
+| ファイル | 役割 | 出力 |
+|----------|------|------|
+| enrich_today.py | **過去データから94特徴量を補完**（shutsuba_fetchの不足分） | today_entries_{date}.csv 更新 |
+
 ### PHASE 4 — 予想・資金管理・馬券戦略
 | ファイル | 役割 | 出力 |
 |----------|------|------|
-| predict_04.py | 予想生成（穴馬: >=30倍・MIN_ODDS_RAW=300） | simulation_{year}.csv |
+| predict_04.py | 予想生成（T=1.0実オッズ/T=1.8推定オッズ・apply_real_odds自動反映） | predictions_{date}.csv |
 | ev_engine_10.py | 期待値計算（race_type別閾値・knowledge_base boost） | ev_analysis_{year}.csv |
 | portfolio_opt_11.py | 馬券ポートフォリオ最適化 | portfolio_{year}.csv |
 | kelly_bankroll_09.py | Kelly基準資金管理 | data/bankroll.json |
@@ -176,13 +185,14 @@ postgresql://postgres:trust@localhost:5433/mykeibadb
 ## --morning v2 並列化マップ
 
 ```
-P1 (serial) : DB同期 → shutsuba → data_fetch → feature_eng → adv_features(×7)
-P2 (parallel): anomaly ‖ bankroll   → auto_learn
-P4a (serial) : predict
+P1  (serial) : DB同期 → shutsuba → data_fetch → feature_eng → adv_features(×7)
+P2  (parallel): anomaly ‖ bankroll   → auto_learn
+P3  (serial) : enrich_today → odds_model predict  ← NEW
+P4a (serial) : predict (apply_real_odds → T=1.0/1.8 自動判定)
 P4b (parallel x4): ev ‖ race_sel ‖ backtest ‖ walkfwd ‖ cond_adj ‖ odds_mon ‖ odds_scraper
 P4c (parallel x3): portfolio ‖ ticket_opt ‖ bet_portfolio
 P4d (serial) : multi_agent → knowledge_curator
-P5  (parallel x4): comment ‖ note ‖ morning_report ‖ roi_report
+P5  (parallel x4): comment ‖ note ‖ morning_report(Kelly配分) ‖ roi_report
                   + ollama_analyst ‖ llm_predictor
 ```
 

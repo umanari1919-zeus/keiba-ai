@@ -411,7 +411,7 @@ def fetch_recent_results(days: int = 7) -> List[Dict]:
                 u.bamei,
                 u.kishu_code,
                 u.chokyoshi_code,
-                u.chakujun,
+                NULLIF(REGEXP_REPLACE(u.kakutei_chakujun, '[^0-9]', '', 'g'), '')::INTEGER AS chakujun,
                 u.tansho_odds,
                 u.ninki,
                 r.kyoso_joken_code_2sai,
@@ -424,7 +424,7 @@ def fetch_recent_results(days: int = 7) -> List[Dict]:
             FROM umagoto_race_joho u
             LEFT JOIN race_shosai r ON u.race_code = r.race_code
             WHERE LEFT(u.race_code, 8) >= :since
-            ORDER BY u.race_code, u.chakujun
+            ORDER BY u.race_code, u.kakutei_chakujun
             LIMIT 5000
         """
         with engine.connect() as conn:

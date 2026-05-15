@@ -133,9 +133,23 @@ def build_rag_index(limit: int = 0, dry_run: bool = False, rebuild: bool = False
         store.clear()
         log.info("RAGStore rebuild: 既存 %d 件をクリア", before_count)
         existing_ids: set[str] = set()
+        existing_count = 0
     else:
         existing_ids = store.existing_ids()
+        existing_count = store.count()
         log.info("RAGStore 既存ID: %d 件", len(existing_ids))
+
+    max_docs = int(os.getenv("KEIBA_RAG_MAX_DOCS", "50000"))
+    if max_docs > 0 and existing_count >= max_docs:
+        log.info("RAGStore 上限到達: existing=%d max=%d → 追加スキップ", existing_count, max_docs)
+        return {
+            "indexed": 0,
+            "skipped": 0,
+            "skipped_existing": len(df),
+            "csv_rows": csv_rows,
+            "backend": BACKEND,
+            "max_docs": max_docs,
+        }
 
     # 行ごとにエンベッディング追加
     indexed = 0
@@ -146,6 +160,9 @@ def build_rag_index(limit: int = 0, dry_run: bool = False, rebuild: bool = False
         doc_id = make_doc_id(int(row_index), row)
         if doc_id in existing_ids:
             skipped_existing += 1
+            continue
+        if max_docs > 0 and existing_count + indexed >= max_docs:
+            skipped += 1
             continue
         features = row.to_dict()
         metadata = {

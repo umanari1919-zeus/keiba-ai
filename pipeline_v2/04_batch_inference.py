@@ -56,9 +56,10 @@ def main(trace_id: str = "", run_tag: str = "", dry_run: bool = False) -> int:
 
     if result.ok:
         out = result.output
+        predictions = out.get("predictions") or []
         log.info(
             "batch_inference 完了: candidates=%s ev_threshold=%s",
-            out.get("candidate_count"), out.get("ev_threshold"),
+            len(predictions), out.get("ev_threshold"),
         )
         return 0
     log.error("batch_inference 失敗: %s", result.error)

@@ -119,3 +119,30 @@ LEAKY_DERIVED_FEATURE_COLUMNS = (
     "ema5_odds",
     "ema10_odds",
 )
+
+
+# =================================================================
+# オッズ控除率（ブックメーカー控除 = JRA公式控除率）
+# =================================================================
+# 出典: JRA公式 「買い目シミュレーション」控除率一覧
+# https://www.jra.go.jp/dento/dentosyou/
+# 2014年以降の現行控除率
+#
+# これを EV 計算とバックテストに必ず適用して、「控除前オッズ」で
+# 計算したバックテスト ROI の過大評価を防ぐ。
+TAKEOUT_RATES = {
+    "tansho": 0.20,        # 単勝
+    "fukusho": 0.20,       # 複勝
+    "wakuren": 0.225,      # 枠連
+    "umaren": 0.225,       # 馬連
+    "wide": 0.225,         # ワイド
+    "umatan": 0.25,        # 馬単
+    "sanrenpuku": 0.275,   # 三連複
+    "sanrentan": 0.275,    # 三連単
+    "win5": 0.30,          # WIN5
+}
+
+
+def get_takeout_rate(ticket_type: str) -> float:
+    """馬券種別控除率を返す。未知の種別は保守的に 0.275 を返す。"""
+    return TAKEOUT_RATES.get(ticket_type.lower(), 0.275)

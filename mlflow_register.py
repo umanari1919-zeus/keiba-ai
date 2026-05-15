@@ -48,11 +48,11 @@ def _get_git_hash() -> str:
 
 def register_model(model_path: str) -> dict:
     """model_v8.pkl を MLflow に登録し、メタデータ JSON も保存する。"""
-    import mlflow
-
     model_path = Path(model_path)
     if not model_path.exists():
         raise FileNotFoundError(f"Model not found: {model_path}")
+
+    import mlflow
 
     with open(model_path, "rb") as f:
         model_data = pickle.load(f)
@@ -88,14 +88,14 @@ def register_model(model_path: str) -> dict:
         if metrics.get("cb_acc") is not None:
             mlflow.log_metric("cb_acc", metrics["cb_acc"])
 
-        mlflow.log_artifact(str(model_path))
+        mlflow.log_artifact(str(model_path), artifact_path="models")
 
         features_path = model_path.parent / "model_features.json"
         features_path.write_text(
             json.dumps(features, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        mlflow.log_artifact(str(features_path))
+        mlflow.log_artifact(str(features_path), artifact_path="models")
 
         run_id = run.info.run_id
 
@@ -115,6 +115,14 @@ def register_model(model_path: str) -> dict:
     meta_path = model_path.with_suffix(".meta.json")
     meta_path.write_text(
         json.dumps(meta, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    # Run ID を永続化（mlflow_register を后から呼ぶ際の Run ID 解決に使う）
+    last_run_path = BASE_PATH / "data" / "last_train_run.json"
+    last_run_path.parent.mkdir(parents=True, exist_ok=True)
+    last_run_path.write_text(
+        json.dumps({"run_id": run_id, "run_name": run_name, "registered_at": meta["registered_at"]}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 

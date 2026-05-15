@@ -56,12 +56,23 @@ def _safe_float(value, default: float = 0.0) -> float:
         return default
 
 
+BACKTEST_ONLY_COLUMNS = {
+    "kakutei_chakujun",
+    "chakujun",
+    "tansho_ninkijun",
+    "analysis_mode",
+}
+
+
 def _rows_to_predictions(rows: list[dict]) -> list:
     preds = []
     for row in rows:
+        mode = str(row.get("analysis_mode", "")).upper()
+        if mode == "BACKTEST_ONLY" or any(col in row and row.get(col) not in ("", None) for col in BACKTEST_ONLY_COLUMNS - {"analysis_mode"}):
+            continue
         tansho = _safe_float(row.get("tansho_odds", 100), 100.0)
         odds_decimal = _safe_float(row.get("odds_decimal", 0.0), 0.0)
-        odds = odds_decimal or (tansho / 100 if tansho > 100 else tansho)
+        odds = _safe_float(row.get("odds", 0.0), 0.0) or odds_decimal or (tansho / 100 if tansho > 100 else tansho)
         preds.append({
             "race_id":               str(row.get("race_code", row.get("race_id", ""))),
             "entry_id":              str(row.get("umaban", row.get("entry_id", ""))),
@@ -75,11 +86,14 @@ def _rows_to_predictions(rows: list[dict]) -> list:
     return preds
 
 
-def _load_predictions() -> list:
-    """ev_analysis_{year}.csv から当日の予測を読み込む。"""
-    year = datetime.now().year
-    for search in [DATA_DIR, BASE_DIR]:
-        path = search / f"ev_analysis_{year}.csv"
+def _load_predictions(date_str: str | None = None) -> list:
+    """当日用の予測CSVだけを読み込む。バックテスト成果物は読まない。"""
+    date_str = date_str or today
+    candidate_paths = [
+        DATA_DIR / f"ev_today_{date_str}.csv",
+        DATA_DIR / f"predictions_{date_str}.csv",
+    ]
+    for path in candidate_paths:
         if path.exists():
             try:
                 import pandas as pd
@@ -97,7 +111,7 @@ def _load_predictions() -> list:
                     return preds
                 except Exception as csv_exc:
                     log.warning("予測読み込みエラー: %s", csv_exc)
-    log.warning("ev_analysis CSV が見つかりません")
+    log.info("当日予測CSV未生成のため候補なしで続行: %s", ", ".join(p.name for p in candidate_paths))
     return []
 
 
@@ -131,7 +145,7 @@ def main(trace_id: str = "", run_tag: str = "", dry_run: bool = False, live: boo
         log.error("agents インポート失敗: %s", exc)
         return 1
 
-    predictions    = _load_predictions()
+    predictions    = _load_predictions(today)
     market_signals = _load_market_signals()
 
     meta   = AgentMeta(trace_id=trace_id, run_tag=run_tag)

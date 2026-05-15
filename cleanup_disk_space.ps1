@@ -1,10 +1,10 @@
 #Requires -Version 7
 # ================================================================
 # Cleanup script for keiba_ai disk space (~8.7 GB recoverable)
-# Run: pwsh -File D:\keiba_ai\cleanup_disk_space.ps1
+# Run from the repository root: pwsh -File .\cleanup_disk_space.ps1
 # ================================================================
 
-$base = "D:\keiba_ai"
+$base = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $base
 
 Write-Host ""

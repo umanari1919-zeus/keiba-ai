@@ -30,6 +30,30 @@ EV_THRESHOLD  = 0.15
 MIN_ODDS      = 10.0
 KELLY_FRACTION = 0.10
 
+BACKTEST_ONLY_COLUMNS = {
+    "kakutei_chakujun",
+    "chakujun",
+    "tansho_ninkijun",
+    "analysis_mode",
+}
+
+
+def _normalize_id(value) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd is not None and pd.isna(value):
+            return ""
+    except TypeError:
+        pass
+    try:
+        numeric = float(value)
+        if numeric.is_integer():
+            return str(int(numeric))
+    except (TypeError, ValueError):
+        pass
+    return str(value)
+
 
 class BatchInferenceAgent(BaseAgent):
     """
@@ -43,14 +67,24 @@ class BatchInferenceAgent(BaseAgent):
 
     def _run(self, meta: AgentMeta, payload: dict) -> dict:
         today = datetime.now().strftime("%Y%m%d")
+        pred_args = ["--dry-run"] if self.dry_run else []
+        ev_args = ["--dry-run"] if self.dry_run else ["--date", today]
 
         # ── 1. 予測実行 (predict_04.py) ──────────────────────────
-        pred_ok, pred_msg = self._run_script("pipeline/predict_04.py", meta, extra_args=["--dry-run"])
+        pred_ok, pred_msg = self._run_script("pipeline/predict_04.py", meta, extra_args=pred_args)
         if not pred_ok:
+            if "当日出馬表なし" in pred_msg or "today_entries" in pred_msg:
+                log.warning("当日出馬表なし。予測なしで正常終了します: %s", pred_msg.splitlines()[0])
+                return {
+                    "data_snapshot_id": meta.data_snapshot_id,
+                    "predictions":      [],
+                    "output_hash":      sha256_of([]),
+                    "timestamp":        datetime.now(timezone.utc).isoformat(),
+                }
             raise RuntimeError(f"predict_04.py が失敗しました: {pred_msg}")
 
         # ── 2. EV 計算 (ev_engine_10.py) ─────────────────────────
-        ev_ok, ev_msg = self._run_script("pipeline/ev_engine_10.py", meta, extra_args=["--dry-run"])
+        ev_ok, ev_msg = self._run_script("pipeline/ev_engine_10.py", meta, extra_args=ev_args)
         if not ev_ok:
             log.warning("ev_engine_10.py が失敗しました。EV なし予測を使用します: %s", ev_msg)
 
@@ -68,22 +102,17 @@ class BatchInferenceAgent(BaseAgent):
     # ------------------------------------------------------------------ #
 
     def _load_predictions(self, today: str) -> list[dict]:
-        # simulation_{year}.csv を inference_output_v1 形式に変換
-        year     = today[:4]
-        sim_path = BASE_DIR / f"simulation_{year}.csv"
-        ev_path  = DATA_DIR / f"ev_analysis_{year}.csv"
+        # 当日用CSVだけを inference_output_v1 形式に変換する。
+        candidate_paths = [
+            DATA_DIR / f"ev_today_{today}.csv",
+            DATA_DIR / f"predictions_{today}.csv",
+        ]
+        src = next((path for path in candidate_paths if path.exists()), None)
 
-        candidates = []
-        for path in [sim_path, ev_path]:
-            if path.exists():
-                candidates.append(path)
-
-        if not candidates:
+        if src is None:
             log.warning("予測CSVが見つかりません。空リストを返します。")
             return []
 
-        # ev_analysis を優先
-        src = candidates[-1]
         if pd is None:
             log.warning("pandas 未インストールのため %s を読み込めません", src)
             return []
@@ -96,20 +125,31 @@ class BatchInferenceAgent(BaseAgent):
         predictions = []
         col_map = {
             "race_id":         ["race_id", "race_code"],
-            "entry_id":        ["entry_id", "horse_id", "horse_num"],
+            "entry_id":        ["entry_id", "horse_id", "horse_num", "umaban"],
             "win_prob":        ["win_prob", "win_probability", "pred_win"],
             "place_prob":      ["place_prob", "place_probability"],
-            "expected_return": ["expected_return", "ev", "ev_score"],
+            "expected_return": ["expected_return", "expected_value", "ev", "ev_score"],
             "uncertainty":     ["uncertainty", "pred_std"],
         }
 
         for _, row in df.iterrows():
+            mode = str(row.get("analysis_mode", "")).upper()
+            has_result = any(
+                col in df.columns and row.get(col) not in ("", None)
+                for col in BACKTEST_ONLY_COLUMNS - {"analysis_mode"}
+            )
+            if mode == "BACKTEST_ONLY" or has_result:
+                continue
+
             rec: dict = {}
             for field, aliases in col_map.items():
                 for alias in aliases:
                     if alias in df.columns:
                         val = row.get(alias)
-                        rec[field] = float(val) if isinstance(val, (int, float)) else str(val)
+                        if field in {"race_id", "entry_id"}:
+                            rec[field] = _normalize_id(val)
+                        else:
+                            rec[field] = float(val) if isinstance(val, (int, float)) else str(val)
                         break
                 if field not in rec:
                     rec[field] = 0.0 if field != "race_id" and field != "entry_id" else ""
