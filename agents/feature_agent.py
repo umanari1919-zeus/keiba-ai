@@ -58,6 +58,10 @@ class FeatureAgent(BaseAgent):
             results[script_rel] = "ok" if ok else "error"
             log.info("  %-45s → %s", desc, results[script_rel])
 
+        failed_scripts = [script for script, status in results.items() if status != "ok"]
+        if failed_scripts:
+            raise RuntimeError("feature scripts failed: " + ", ".join(failed_scripts))
+
         # keiba_data_features.csv の SHA-256
         feat_csv = BASE_DIR / "keiba_data_features.csv"
         feature_manifest = {
@@ -71,6 +75,7 @@ class FeatureAgent(BaseAgent):
         return {
             "feature_set_id":     feature_set_id,
             "feature_manifest":   feature_manifest,
+            "script_results":     results,
             "training_snapshot_id": meta.data_snapshot_id,
         }
 
