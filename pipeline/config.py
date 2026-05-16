@@ -197,3 +197,11 @@ TAKEOUT_RATES = {
 def get_takeout_rate(ticket_type: str) -> float:
     """馬券種別控除率を返す。未知の種別は保守的に 0.275 を返す。"""
     return TAKEOUT_RATES.get(ticket_type.lower(), 0.275)
+
+
+# =================================================================
+# 市場インパクト（自分の購入でオッズが下がる効果）の既定値
+# =================================================================
+MARKET_IMPACT_DEFAULT_BET_JPY = 1_000
+MARKET_IMPACT_DEFAULT_TANSHO_POOL_JPY = 50_000_000
+MARKET_IMPACT_MIN_POOL_JPY = 100_000

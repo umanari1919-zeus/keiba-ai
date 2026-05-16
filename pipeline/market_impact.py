@@ -35,13 +35,14 @@ from __future__ import annotations
 
 from typing import Optional
 
+from pipeline.config import MARKET_IMPACT_DEFAULT_TANSHO_POOL_JPY, MARKET_IMPACT_MIN_POOL_JPY
 
 # デフォルトの推定プールサイズ（単勝、円）。本場とローカルで大きく異なる。
 #   GIグレードレース: 1〜10億円
 #   平日中央: 5,000万〜1億円
 #   地方・ローカル: 100万〜500万円
-DEFAULT_TANSHO_POOL_JPY = 50_000_000  # 5千万円 (中央現実的値)
-MIN_POOL_JPY = 100_000  # この下限を下回るとスリッパージ計算が不安定になる
+DEFAULT_TANSHO_POOL_JPY = MARKET_IMPACT_DEFAULT_TANSHO_POOL_JPY
+MIN_POOL_JPY = MARKET_IMPACT_MIN_POOL_JPY
 
 
 def estimate_post_bet_odds(

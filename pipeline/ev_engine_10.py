@@ -18,8 +18,10 @@ from pipeline.config import (
     CSV_FEATURES,
     EV_THRESHOLD,
     EV_THRESHOLDS_BY_TYPE,
+    MARKET_IMPACT_DEFAULT_BET_JPY,
     MIN_ODDS,
 )
+from pipeline.market_impact import estimate_post_bet_odds
 from pipeline.native_runtime import ensure_native_runtime
 
 ensure_native_runtime()
@@ -126,6 +128,48 @@ def extract_win_probabilities(ensemble_proba, le):
 
 def calculate_ev(p_win, odds):
     return p_win * odds - 1.0
+
+
+def _first_numeric(row: pd.Series, names: tuple[str, ...], default: float) -> float:
+    for name in names:
+        if name not in row:
+            continue
+        value = pd.to_numeric(row.get(name), errors="coerce")
+        if pd.notna(value) and float(value) > 0:
+            return float(value)
+    return float(default)
+
+
+def _apply_market_impact(df: pd.DataFrame) -> pd.DataFrame:
+    """当日EVに購入インパクトを反映する。公表オッズは控除後なので控除は二重適用しない。"""
+    result = df.copy()
+    result["expected_value_naive"] = result["win_probability"] * result["odds_decimal"] - 1.0
+
+    odds_after = []
+    stake_amounts = []
+    pools = []
+    for _, row in result.iterrows():
+        stake = _first_numeric(
+            row,
+            ("stake_amount", "bet_amount", "planned_bet", "stake_jpy"),
+            MARKET_IMPACT_DEFAULT_BET_JPY,
+        )
+        pool = _first_numeric(row, ("pool_jpy", "tansho_pool_jpy", "pool"), 0.0)
+        adjusted = estimate_post_bet_odds(
+            old_odds=float(row["odds_decimal"]),
+            bet=stake,
+            pool=pool or None,
+        )
+        stake_amounts.append(stake)
+        pools.append(pool)
+        odds_after.append(adjusted)
+
+    result["stake_amount"] = stake_amounts
+    result["pool_jpy"] = pools
+    result["odds_after_impact"] = odds_after
+    result["expected_value"] = result["win_probability"] * result["odds_after_impact"] - 1.0
+    result["market_impact_applied"] = True
+    return result
 
 
 def _estimate_odds_decimal(df):
@@ -316,7 +360,7 @@ def run_ev_today(date_str: str = None, threshold=EV_THRESHOLD):
 
     df['win_probability'] = df['win_prob'] / 100.0
     df['odds_decimal'] = df['odds']
-    df['expected_value'] = df['win_probability'] * df['odds_decimal'] - 1.0
+    df = _apply_market_impact(df)
 
     boost_map = _load_ev_boost_map()
     if boost_map:
