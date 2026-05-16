@@ -35,3 +35,37 @@ def test_model_train_has_writable_model_path_constant():
     from pipeline.model_train_03 import MODEL_PATH
 
     assert str(MODEL_PATH).endswith("model_v8.pkl")
+
+
+def test_predict_rejects_saved_model_features_with_leaky_columns():
+    from pipeline.predict_04 import _prepare_model_input
+
+    df = pd.DataFrame({
+        "barei": [3],
+        "kyori": [1200],
+        "tansho_odds": [2379],
+    })
+
+    try:
+        _prepare_model_input(df, ["barei", "tansho_odds", "kyori"])
+    except ValueError as exc:
+        assert "tansho_odds" in str(exc)
+    else:
+        raise AssertionError("leaky saved model feature was accepted")
+
+
+def test_predict_model_input_uses_exact_saved_feature_order_and_fills_missing():
+    from pipeline.predict_04 import _prepare_model_input
+
+    df = pd.DataFrame({
+        "kyori": [1200],
+        "barei": ["3"],
+        "unused_extra": [999],
+    })
+
+    X = _prepare_model_input(df, ["barei", "missing_speed", "kyori"])
+
+    assert list(X.columns) == ["barei", "missing_speed", "kyori"]
+    assert X.loc[0, "barei"] == 3
+    assert X.loc[0, "missing_speed"] == 0
+    assert X.loc[0, "kyori"] == 1200

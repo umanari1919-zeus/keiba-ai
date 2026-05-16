@@ -120,6 +120,57 @@ LEAKY_DERIVED_FEATURE_COLUMNS = (
     "ema10_odds",
 )
 
+# 学習・推論のモデル入力に入れてはいけない列。
+# オッズ・人気はEV評価以降でのみ使用し、結果列や現在時点通算成績はリーク疑いとして除外する。
+MODEL_FORBIDDEN_FEATURE_COLUMNS = (
+    "kakutei_chakujun",
+    "tansho_odds",
+    "tansho_ninkijun",
+    "bamei",
+    "kishumei_ryakusho",
+    "chichi",
+    "haha",
+    "chichi_chichi",
+    "haha_chichi",
+    "race_date",
+    "prev_race_date",
+    "race_code",
+    "ketto_toroku_bango",
+    "kaisai_gappi",
+    "win_probability",
+    "expected_value",
+    "odds_decimal",
+    "pred_chakujun",
+    "hit",
+    "ev",
+    "pred_rank",
+    "bankroll_after",
+    *LEAKY_DERIVED_FEATURE_COLUMNS,
+    # kyosoba_master2 の現在時点通算成績は、対象レース以後の結果を含む可能性がある。
+    "sogo_1chaku",
+    "sogo_2chaku",
+    "sogo_3chaku",
+    "sogo_total",
+    "sogo_win_rate",
+    "shiba_ryo_1chaku",
+    "shiba_ryo_2chaku",
+    "shiba_ryo_3chaku",
+    "dirt_ryo_1chaku",
+    "dirt_ryo_2chaku",
+    "dirt_ryo_3chaku",
+    "shiba_short_1chaku",
+    "shiba_middle_1chaku",
+    "shiba_long_1chaku",
+    "dirt_short_1chaku",
+    "dirt_middle_1chaku",
+    "dirt_long_1chaku",
+    "shiba_win_rate",
+    "dirt_win_rate",
+    "short_win_rate",
+    "middle_win_rate",
+    "long_win_rate",
+)
+
 
 # =================================================================
 # オッズ控除率（ブックメーカー控除 = JRA公式控除率）

@@ -1,7 +1,7 @@
 import pickle
 from datetime import datetime
 
-from pipeline.config import BASE_DIR, CSV_FEATURES, MODEL_PATH
+from pipeline.config import BASE_DIR, CSV_FEATURES, MODEL_FORBIDDEN_FEATURE_COLUMNS, MODEL_PATH
 from pipeline.native_runtime import ensure_native_runtime
 
 ensure_native_runtime()
@@ -66,56 +66,7 @@ FEATURES = [
 ]
 
 
-LEAKY_OR_RAW_COLUMNS = {
-    "kakutei_chakujun",
-    "tansho_odds",
-    "tansho_ninkijun",
-    "bamei",
-    "kishumei_ryakusho",
-    "chichi",
-    "haha",
-    "chichi_chichi",
-    "haha_chichi",
-    "race_date",
-    "prev_race_date",
-    "race_code",
-    "ketto_toroku_bango",
-    "kaisai_gappi",
-    "win_probability",
-    "expected_value",
-    "odds_decimal",
-    "past3_avg_odds",
-    "prev_odds",
-    "ema3_odds",
-    "pred_chakujun",
-    "hit",
-    "ev",
-    "pred_rank",
-    "bankroll_after",
-    # kyosoba_master2 の現在時点通算成績は、対象レース以後の結果を含む可能性がある。
-    "sogo_1chaku",
-    "sogo_2chaku",
-    "sogo_3chaku",
-    "sogo_total",
-    "sogo_win_rate",
-    "shiba_ryo_1chaku",
-    "shiba_ryo_2chaku",
-    "shiba_ryo_3chaku",
-    "dirt_ryo_1chaku",
-    "dirt_ryo_2chaku",
-    "dirt_ryo_3chaku",
-    "shiba_short_1chaku",
-    "shiba_middle_1chaku",
-    "shiba_long_1chaku",
-    "dirt_short_1chaku",
-    "dirt_middle_1chaku",
-    "dirt_long_1chaku",
-    "shiba_win_rate",
-    "dirt_win_rate",
-    "short_win_rate",
-    "middle_win_rate",
-    "long_win_rate",
-}
+LEAKY_OR_RAW_COLUMNS = set(MODEL_FORBIDDEN_FEATURE_COLUMNS)
 
 
 def _to_numeric_frame(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:

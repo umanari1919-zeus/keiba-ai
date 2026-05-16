@@ -9,7 +9,7 @@ PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from pipeline.config import BASE_DIR, DATA_DIR, CSV_FEATURES
+from pipeline.config import BASE_DIR, DATA_DIR, CSV_FEATURES, MODEL_FORBIDDEN_FEATURE_COLUMNS
 from pipeline.native_runtime import ensure_native_runtime
 
 ensure_native_runtime()
@@ -33,6 +33,8 @@ FEAT_FILE  = CSV_FEATURES
 MIN_ODDS_RAW  = 100   # 10倍以上（EV分析の最低ライン）
 ANABA_ODDS_RAW = 300  # 30倍以上（穴馬定義）
 JRA_TANSHO_TAKEOUT = 0.20  # JRA単勝控除率
+MODEL_FORBIDDEN_FEATURE_SET = set(MODEL_FORBIDDEN_FEATURE_COLUMNS)
+MODEL_FORBIDDEN_KEYWORDS = ("odds", "ninki", "popular", "単勝", "複勝", "人気")
 
 
 def estimate_odds_for_race(race_df):
@@ -115,6 +117,40 @@ def _load_model():
         raise RuntimeError(f"モデル読み込みエラー: {e}") from e
 
 
+def _find_forbidden_model_features(features: list[str]) -> list[str]:
+    forbidden = []
+    for feature in features:
+        name = str(feature)
+        normalized = name.lower()
+        if name in MODEL_FORBIDDEN_FEATURE_SET:
+            forbidden.append(name)
+            continue
+        if any(keyword in normalized for keyword in MODEL_FORBIDDEN_KEYWORDS):
+            forbidden.append(name)
+    return forbidden
+
+
+def _prepare_model_input(df, features: list[str]):
+    """保存済み特徴量契約どおりの数値入力を作る。契約違反の特徴量は拒否する。"""
+    if pd is None:
+        raise RuntimeError("pandas が未インストールです")
+
+    forbidden = _find_forbidden_model_features(features)
+    if forbidden:
+        preview = ", ".join(forbidden[:10])
+        raise ValueError(f"モデル特徴量にリーク危険列があります: {preview}")
+
+    X = df.copy()
+    missing = [feature for feature in features if feature not in X.columns]
+    for feature in missing:
+        X[feature] = 0
+    X = X[features].copy()
+    for col in X.columns:
+        if not pd.api.types.is_numeric_dtype(X[col]):
+            X[col] = pd.to_numeric(X[col], errors="coerce")
+    return X.fillna(0)
+
+
 def _check_runtime(date_str: str | None = None) -> list[str]:
     issues = []
     if pd is None:
@@ -167,18 +203,11 @@ def predict_today(date_str: str = None) -> list:
     df = df.fillna(0)
     print(f"[predict_04] 当日出馬表: {len(df)}頭 {df['race_code'].nunique()}R")
 
-    # モデルが必要とする特徴量のうち存在するものだけ使用
-    feats = [f for f in features if f in df.columns]
     missing = [f for f in features if f not in df.columns]
     if missing:
         print(f"[predict_04] 不足特徴量 {len(missing)}件 → 0埋め")
-        for f in missing:
-            df[f] = 0
 
-    X = df[features].copy()
-    # 文字列列を数値に強制変換（モデルは int/float のみ受付）
-    for col in X.select_dtypes(include="object").columns:
-        X[col] = pd.to_numeric(X[col], errors="coerce").fillna(0)
+    X = _prepare_model_input(df, features)
 
     lgb_p = lgb_model.predict_proba(X)
     xgb_p = xgb_model.predict_proba(X)
@@ -306,7 +335,7 @@ def simulate_recovery(year):
     if len(test_df) == 0:
         return None
     
-    X_test = test_df[features]
+    X_test = _prepare_model_input(test_df, features)
     
     # 加重アンサンブル予測
     lgb_proba = lgb_model.predict_proba(X_test)
