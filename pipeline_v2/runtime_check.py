@@ -66,6 +66,10 @@ def _module_label(module_name: str) -> str:
     return MODULE_ALIASES.get(module_name, module_name)
 
 
+def _hint(detail: str, message: str) -> str:
+    return f"{detail} | hint: {message}"
+
+
 def check_modules(profile: str) -> list[CheckResult]:
     profiles = ["daily", "weekly"] if profile == "all" else [profile]
     required: list[str] = []
@@ -137,10 +141,13 @@ def check_external() -> list[CheckResult]:
     if importlib.util.find_spec("playwright"):
         browser_root = pathlib.Path.home() / ".cache" / "ms-playwright"
         has_browsers = browser_root.exists() and any(browser_root.iterdir())
+        detail = str(browser_root)
+        if not has_browsers:
+            detail = _hint(detail, "python3 -m playwright install chromium")
         results.append(CheckResult(
             name="external:playwright-browsers",
             status="PASS" if has_browsers else "WARN",
-            detail=str(browser_root),
+            detail=detail,
         ))
     return results
 
@@ -172,7 +179,10 @@ def check_database() -> list[CheckResult]:
         status = "PASS"
     except OSError as exc:
         status = "WARN"
-        detail = f"{target} ({exc})"
+        detail = _hint(
+            f"{target} ({exc})",
+            "python3 tools/local_postgres.py start でDBを起動し、python3 run_all.py --runtime-check で再確認",
+        )
 
     results.append(CheckResult(
         name="external:postgres-port",
