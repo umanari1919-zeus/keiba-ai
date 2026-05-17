@@ -61,6 +61,10 @@ MODULE_ALIASES = {
     "dotenv": "python-dotenv",
 }
 
+SHARED_LIBRARY_PACKAGES = {
+    "libnspr4.so": "libnspr4",
+}
+
 
 def _module_label(module_name: str) -> str:
     return MODULE_ALIASES.get(module_name, module_name)
@@ -68,6 +72,18 @@ def _module_label(module_name: str) -> str:
 
 def _hint(detail: str, message: str) -> str:
     return f"{detail} | hint: {message}"
+
+
+def _playwright_dependency_hint(reason: str) -> str:
+    base = "python3 -m playwright install-deps chromium"
+    packages = [
+        package
+        for shared_lib, package in SHARED_LIBRARY_PACKAGES.items()
+        if shared_lib in reason
+    ]
+    if packages:
+        return f"{base}; sudo apt-get install -y {' '.join(sorted(set(packages)))}"
+    return base
 
 
 def check_modules(profile: str) -> list[CheckResult]:
@@ -166,7 +182,7 @@ def check_external() -> list[CheckResult]:
                     reason = f"{reason}; {shared_lib_error}"
                 detail = _hint(
                     f"{browser_root} (launch failed: {reason})",
-                    "python3 -m playwright install-deps chromium",
+                    _playwright_dependency_hint(reason),
                 )
         results.append(CheckResult(
             name="external:playwright-browsers",

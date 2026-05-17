@@ -71,3 +71,4 @@ def test_playwright_launch_warning_includes_dependency_hint(tmp_path, monkeypatc
     assert browsers.status == "WARN"
     assert "libnspr4.so" in browsers.detail
     assert "python3 -m playwright install-deps chromium" in browsers.detail
+    assert "sudo apt-get install -y libnspr4" in browsers.detail
