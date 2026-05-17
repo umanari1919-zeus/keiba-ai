@@ -130,6 +130,10 @@ def check_files() -> list[CheckResult]:
     ]
 
 
+def _playwright_browser_root() -> pathlib.Path:
+    return pathlib.Path.home() / ".cache" / "ms-playwright"
+
+
 def check_external() -> list[CheckResult]:
     exe = pathlib.Path(MYKEIBADB_EXE)
     status = "PASS" if exe.exists() else "WARN"
@@ -139,11 +143,31 @@ def check_external() -> list[CheckResult]:
         detail=str(exe),
     )]
     if importlib.util.find_spec("playwright"):
-        browser_root = pathlib.Path.home() / ".cache" / "ms-playwright"
+        browser_root = _playwright_browser_root()
         has_browsers = browser_root.exists() and any(browser_root.iterdir())
         detail = str(browser_root)
         if not has_browsers:
             detail = _hint(detail, "python3 -m playwright install chromium")
+        else:
+            try:
+                sync_api = importlib.import_module("playwright.sync_api")
+                with sync_api.sync_playwright() as playwright:
+                    browser = playwright.chromium.launch(headless=True, timeout=10000)
+                    browser.close()
+            except Exception as exc:
+                has_browsers = False
+                error_lines = str(exc).splitlines()
+                reason = error_lines[0] if error_lines else exc.__class__.__name__
+                shared_lib_error = next(
+                    (line.strip() for line in error_lines if "error while loading shared libraries" in line),
+                    "",
+                )
+                if shared_lib_error and shared_lib_error not in reason:
+                    reason = f"{reason}; {shared_lib_error}"
+                detail = _hint(
+                    f"{browser_root} (launch failed: {reason})",
+                    "python3 -m playwright install-deps chromium",
+                )
         results.append(CheckResult(
             name="external:playwright-browsers",
             status="PASS" if has_browsers else "WARN",
