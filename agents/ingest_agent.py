@@ -89,9 +89,24 @@ class IngestAgent(BaseAgent):
             log.info(result.stdout.rstrip())
         if result.returncode != 0:
             log.warning("スクリプト終了コード %d: %s\n%s",
-                        result.returncode, rel_path, result.stderr[:500])
+                        result.returncode, rel_path, self._format_script_error(result.stderr))
             return False
         return True
+
+    @staticmethod
+    def _format_script_error(stderr: str, limit: int = 500) -> str:
+        if not stderr:
+            return ""
+        summary = stderr[:limit]
+        important_lines = [
+            line.strip()
+            for line in stderr.splitlines()
+            if "error while loading shared libraries" in line
+        ]
+        for line in important_lines:
+            if line and line not in summary:
+                summary = f"{summary}\n...\n{line}"
+        return summary
 
     @staticmethod
     def _file_record(path: pathlib.Path) -> dict:

@@ -33,6 +33,21 @@ def test_ingest_agent_fails_when_odds_scraper_fails(monkeypatch):
     assert "odds_scraper_36.py" in result.error
 
 
+def test_ingest_script_error_summary_preserves_shared_library_error():
+    from agents.ingest_agent import IngestAgent
+
+    stderr = "\n".join([
+        "Traceback (most recent call last):",
+        *[f"  frame {i}" for i in range(80)],
+        "[pid=123][err] chrome: error while loading shared libraries: libnspr4.so: cannot open shared object file",
+    ])
+
+    summary = IngestAgent._format_script_error(stderr)
+
+    assert "libnspr4.so" in summary
+    assert "error while loading shared libraries" in summary
+
+
 def test_feature_agent_fails_when_any_feature_script_errors(tmp_path, monkeypatch):
     from agents.base_agent import AgentMeta
     import agents.feature_agent as feature_module
