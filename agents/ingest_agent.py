@@ -51,8 +51,13 @@ class IngestAgent(BaseAgent):
         if odds_ok and odds_path.exists():
             raw_files.append(self._file_record(odds_path))
 
-        if not fetch_ok and not odds_ok:
-            raise RuntimeError("ingest sources failed: pipeline/data_fetch_01.py, pipeline/odds_scraper_36.py")
+        failed_sources = []
+        if not fetch_ok:
+            failed_sources.append("pipeline/data_fetch_01.py")
+        if not odds_ok:
+            failed_sources.append("pipeline/odds_scraper_36.py")
+        if failed_sources:
+            raise RuntimeError(f"ingest sources failed: {', '.join(failed_sources)}")
 
         # ── 3. スナップショット登録 ───────────────────────────────
         self._register_snapshot(snap_id, raw_files, meta)

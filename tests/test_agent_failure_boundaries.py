@@ -17,7 +17,7 @@ def test_ingest_agent_fails_when_all_sources_fail(monkeypatch):
     assert "odds_scraper_36.py" in result.error
 
 
-def test_ingest_agent_succeeds_when_at_least_one_source_succeeds(monkeypatch):
+def test_ingest_agent_fails_when_odds_scraper_fails(monkeypatch):
     from agents.base_agent import AgentMeta
     from agents.ingest_agent import IngestAgent
 
@@ -29,9 +29,8 @@ def test_ingest_agent_succeeds_when_at_least_one_source_succeeds(monkeypatch):
 
     result = IngestAgent(dry_run=False).execute(AgentMeta(run_tag="run_test"), {})
 
-    assert result.ok is True
-    assert result.output["fetch_ok"] is True
-    assert result.output["odds_ok"] is False
+    assert result.ok is False
+    assert "odds_scraper_36.py" in result.error
 
 
 def test_feature_agent_fails_when_any_feature_script_errors(tmp_path, monkeypatch):
