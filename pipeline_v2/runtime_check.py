@@ -255,6 +255,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="pipeline_v2 の実行環境診断")
     parser.add_argument("--profile", choices=["daily", "weekly", "all"], default="all")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--strict", action="store_true", help="WARN も失敗扱いにする")
     args = parser.parse_args()
 
     results = run_checks(args.profile)
@@ -262,7 +263,8 @@ def main() -> int:
         print(json.dumps([asdict(r) for r in results], ensure_ascii=False, indent=2))
     else:
         print_report(results, args.profile)
-    return 0 if all(r.status != "FAIL" for r in results) else 1
+    fail_statuses = {"FAIL", "WARN"} if args.strict else {"FAIL"}
+    return 0 if all(r.status not in fail_statuses for r in results) else 1
 
 
 if __name__ == "__main__":

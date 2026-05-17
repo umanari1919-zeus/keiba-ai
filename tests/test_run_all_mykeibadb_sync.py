@@ -25,6 +25,23 @@ class RunAllMykeibadbSyncTest(unittest.TestCase):
         self.assertIn("--timeout", calls[0][0])
         self.assertIn("123", calls[0][0])
 
+    def test_run_v2_daily_runs_runtime_check_before_preflight(self):
+        calls = []
+
+        def fake_run(cmd, cwd=None):
+            calls.append(cmd)
+            if "runtime_check.py" in str(cmd):
+                return 1
+            self.fail(f"unexpected subprocess after runtime failure: {cmd}")
+
+        with patch.object(run_all, "_run_subprocess", side_effect=fake_run):
+            rc = run_all.run_v2_daily(trace_id="trace-test")
+
+        self.assertEqual(rc, 1)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("runtime_check.py", str(calls[0]))
+        self.assertIn("--strict", calls[0])
+
 
 if __name__ == "__main__":
     unittest.main()

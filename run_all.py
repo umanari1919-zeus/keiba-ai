@@ -559,7 +559,7 @@ def run_v2_preflight(weekly: bool = False) -> int:
     return _run_subprocess(cmd)
 
 
-def run_v2_runtime_check(profile: str = "all") -> int:
+def run_v2_runtime_check(profile: str = "all", strict: bool = False) -> int:
     """pipeline_v2 の本実行向け依存・ファイル診断を実行する。"""
     print(f"pipeline_v2 runtime check を実行します (profile={profile})", flush=True)
     cmd = [
@@ -570,6 +570,8 @@ def run_v2_runtime_check(profile: str = "all") -> int:
         "--profile",
         profile,
     ]
+    if strict:
+        cmd.append("--strict")
     return _run_subprocess(cmd)
 
 
@@ -629,6 +631,11 @@ def run_doctor(skip_canary: bool = False, strict_external: bool = False) -> int:
 
 def run_v2_daily(trace_id: str = "", preflight: bool = True, preflight_only: bool = False) -> int:
     """pipeline_v2/00_orchestrator.py（日次 DAG）を呼び出す"""
+    if preflight and not preflight_only:
+        rc = run_v2_runtime_check("daily", strict=True)
+        if rc != 0:
+            print("pipeline_v2 runtime check で要修復項目があります。必要なら --skip-preflight で続行してください。")
+            return rc
     if preflight:
         rc = run_v2_preflight(weekly=False)
         if rc != 0 or preflight_only:
@@ -644,6 +651,11 @@ def run_v2_daily(trace_id: str = "", preflight: bool = True, preflight_only: boo
 
 def run_v2_weekly(trace_id: str = "", preflight: bool = True, preflight_only: bool = False) -> int:
     """pipeline_v2/00_orchestrator_weekly.py（週次 DAG）を呼び出す"""
+    if preflight and not preflight_only:
+        rc = run_v2_runtime_check("weekly", strict=True)
+        if rc != 0:
+            print("pipeline_v2 runtime check で要修復項目があります。必要なら --skip-preflight で続行してください。")
+            return rc
     if preflight:
         rc = run_v2_preflight(weekly=True)
         if rc != 0 or preflight_only:
