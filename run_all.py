@@ -690,6 +690,7 @@ if __name__ == "__main__":
   python run_all.py --v2-weekly           # pipeline_v2 週次 DAG（推奨）
   python run_all.py --v2 --preflight-only # pipeline_v2 日次の事前診断だけ実行
   python run_all.py --runtime-check       # 本実行に必要な依存・ファイルを確認
+  python run_all.py --runtime-check --runtime-strict # WARN も失敗扱いで確認
   python run_all.py --integrity-check     # リーク・RAG重複・モデル成果物を確認
   python run_all.py --source-sanity       # 構文・空白・固定ローカルパスを確認
   python run_all.py --doctor              # 総合診断を実行
@@ -704,6 +705,7 @@ if __name__ == "__main__":
     parser.add_argument('--skip-preflight', action='store_true', help='pipeline_v2 実行前の preflight を省略')
     parser.add_argument('--preflight-only', action='store_true', help='pipeline_v2 の preflight のみ実行して終了')
     parser.add_argument('--runtime-check', action='store_true', help='pipeline_v2 本実行向けの依存・ファイル診断のみ実行')
+    parser.add_argument('--runtime-strict', action='store_true', help='--runtime-check 実行時に WARN も失敗扱いにする')
     parser.add_argument('--integrity-check', action='store_true', help='リーク・RAG重複・モデル成果物の整合性チェックのみ実行')
     parser.add_argument('--source-sanity', action='store_true', help='構文・空白・固定ローカルパスの軽量チェックのみ実行')
     parser.add_argument('--doctor',      action='store_true', help='外部依存・source sanity・runtime・integrity・preflight・canary の総合診断を実行')
@@ -728,7 +730,7 @@ if __name__ == "__main__":
 
     if args.runtime_check:
         profile = "weekly" if getattr(args, 'v2_weekly', False) else ("daily" if args.v2 else "all")
-        raise SystemExit(run_v2_runtime_check(profile))
+        raise SystemExit(run_v2_runtime_check(profile, strict=args.runtime_strict))
     if args.integrity_check:
         raise SystemExit(run_integrity_check())
     if args.source_sanity:
