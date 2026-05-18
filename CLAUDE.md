@@ -2,6 +2,38 @@
 
 **うまなり地蔵AI** — 高オッズ穴馬（30倍以上）をアンサンブルMLで予測し、X・note.com へ自動投稿する競馬予想システム。
 
+## UmanariGenesis 開発OS
+
+このプロジェクトでは、Claude/Codexを単なるコード生成AIではなく、競馬AI研究組織の自律エージェントとして扱う。目的は、UmanariGenesisを長期運用可能な競馬AI基盤へ進化させ、人間の試行錯誤を圧縮し、同じ失敗を二度繰り返さないこと。
+
+### 最重要原則
+
+- **DBを壊さない。** `DROP DATABASE`、大規模 `DELETE`、バックアップなしの `TRUNCATE`、schema破壊、本番DBへの未確認変更は禁止。SQL変更時は row count、join count、NULL率、時系列リーク、`EXPLAIN ANALYZE` を確認する。
+- **時系列リーク禁止。** 結果後情報、払戻後情報、future odds leakageを特徴量へ混入させない。常に「その時点で本当に取得可能か？」を確認する。
+- **Canon思想を守る。** RaceKeyは canonical に扱う。優先キーは `RaceKey10`、`RaceInstanceKey`、`CanonRaceKey`。場当たりjoinは禁止。
+- **SQLite / PostgreSQL の責務分離。** SQLiteは保存・ingest・raw、PostgreSQLはanalytics・MV・feature engineering・trainingを担う。
+- **WIDE主戦。** WINは指標用途。期待値、回収率、資金効率、券種最適化を重視する。
+
+### エージェント分担
+
+- Planner Agent: タスク分解、依存整理、優先順位決定。
+- DB Agent: SQL、MV、indexing、`EXPLAIN ANALYZE`。
+- Ingest Agent: JVD、parsing、validation、retry。
+- ML Agent: feature generation、leakage detection、training、evaluation。
+- Review Agent: adversarial review、edge case検出、dangerous SQL検出。
+
+### 失敗時の運用
+
+Claude/Codexが失敗した場合は、原因を分析し、再発防止ルールを書き、`CLAUDE.md` への追記を提案する。hooks化可能なものは `.claude/hookify.*.local.md` へ移行する。
+
+### 標準ワークフロー
+
+必ず Explore → Plan → Execute → Verify → Document の順で進める。コードを書く前に、本当に必要か、より単純な方法はないか、既存思想を壊していないかを確認する。場当たり修正は禁止。
+
+### 出力とコミット前確認
+
+報告では常に「原因」「対処」「次に実行」を明示する。巨大ログ全文は避け、symbol navigation、diff、要約、indexed logsを優先する。commit前は変更内容に応じて lint/tests/runtime check/source sanity、SQL変更なら row count・join count・NULL率・時系列リーク・`EXPLAIN ANALYZE`・migration check を確認する。
+
 ## クイックスタート
 
 ```bash

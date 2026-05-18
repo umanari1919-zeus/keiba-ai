@@ -9,6 +9,20 @@
 - **MIN_ODDS = 10.0**（10倍未満は対象外）
 - **ANABA_ODDS = 30.0**（30倍以上が穴馬定義）
 - オッズ・人気は特徴量に使用禁止（データリーク防止）
+- UmanariGenesis の長期目的は「競馬市場の歪みを検出する自律AIシステム」。単なる予想精度ではなく、期待値・市場構造・資金効率・券種最適化を統合する。
+- 進行は Explore → Plan → Execute → Verify → Document。場当たり修正は禁止。
+- 報告では常に「原因」「対処」「次に実行」を明示する。
+
+## DB・SQL安全規則
+- `DROP DATABASE`、大規模 `DELETE`、バックアップなしの `TRUNCATE`、schema破壊、本番DBへの未確認変更は禁止。
+- SQL変更時は row count、join count、NULL率、時系列リーク、`EXPLAIN ANALYZE` を確認する。
+- SQLite は保存・ingest・raw、PostgreSQL は analytics・MV・feature engineering・training に分ける。
+
+## 時系列・Canon規則
+- 結果後情報、払戻後情報、future odds leakage を特徴量へ混入させない。
+- 常に「この時点で本当に取得可能か？」を確認する。
+- RaceKey は canonical に扱い、優先キーは `RaceKey10`、`RaceInstanceKey`、`CanonRaceKey`。場当たり join 禁止。
+- WIDE を主戦にし、WIN は主に指標用途とする。
 
 ## ディレクトリ構成
 ```

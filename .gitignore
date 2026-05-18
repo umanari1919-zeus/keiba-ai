@@ -45,7 +45,8 @@ dist/
 build/
 
 # ─── Claude セッションデータ ────────────────────────────────
-.claude/
+.claude/*
+!.claude/hookify.*.local.md
 .runtime/
 
 # ─── IDE / OS ───────────────────────────────────────────────
